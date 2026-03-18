@@ -1,0 +1,23 @@
+{
+  "name": "anygen-pl-workbench",
+  "version": "1.0.0",
+  "description": "Local AnyGen workbench for manual, batch, and scheduled generation tasks.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "run-scheduled": "node server.js --run-scheduled",
+    "smoke-test": "node scripts/smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
+    "multer": "^2.0.2",
+    "node-cron": "^3.0.3"
+  }
+}

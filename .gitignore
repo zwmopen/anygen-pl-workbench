@@ -1,0 +1,9 @@
+node_modules/
+data/
+!data/.gitkeep
+data/history/
+data/uploads/
+data/runtime/
+API key.txt
+tmp-*.ps1
+*.log

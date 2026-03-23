@@ -1,8 +1,9 @@
-$ErrorActionPreference = "SilentlyContinue"
+﻿$ErrorActionPreference = "SilentlyContinue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $HealthUrl = "http://127.0.0.1:4318/api/system/health"
 $HomeUrl = "http://127.0.0.1:4318/"
-$LogFile = Join-Path $ProjectRoot "data\runtime\server.log"
+$StdOutLog = Join-Path $ProjectRoot "data\runtime\server.stdout.log"
+$StdErrLog = Join-Path $ProjectRoot "data\runtime\server.stderr.log"
 
 for ($i = 0; $i -lt 60; $i++) {
   try {
@@ -18,11 +19,15 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 
 Write-Host "等待界面启动超时。" -ForegroundColor Red
-if (Test-Path $LogFile) {
+if (Test-Path $StdErrLog) {
   Write-Host "下面是最近日志：" -ForegroundColor Yellow
-  Get-Content $LogFile -Tail 40
+  Get-Content $StdErrLog -Tail 40
+} elseif (Test-Path $StdOutLog) {
+  Write-Host "下面是最近日志：" -ForegroundColor Yellow
+  Get-Content $StdOutLog -Tail 40
 } else {
-  Write-Host "没有找到日志文件：" $LogFile -ForegroundColor Yellow
+  Write-Host "没有找到日志文件：" (Join-Path $ProjectRoot "data\runtime") -ForegroundColor Yellow
 }
 
 exit 1
+

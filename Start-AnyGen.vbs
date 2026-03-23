@@ -1,4 +1,4 @@
 Set WshShell = CreateObject("WScript.Shell")
 Set Fso = CreateObject("Scripting.FileSystemObject")
 BaseDir = Fso.GetParentFolderName(WScript.ScriptFullName)
-WshShell.Run """" & BaseDir & "\一键启动.bat" & """", 0, False
+WshShell.Run """" & BaseDir & "\Start-AnyGen.bat" & """", 0, False

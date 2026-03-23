@@ -22,6 +22,34 @@ npm start
 http://127.0.0.1:4318
 ```
 
+也可以直接双击根目录里的 `一键启动.bat` 或 `一键启动.vbs`。
+
+## 发给朋友直接用
+
+如果你想把它打包后直接发给别人，推荐先生成便携版：
+
+```bash
+npm run build-portable
+```
+
+打包完成后会生成：
+
+- `release/AnyGen-Workbench-Portable`
+- `release/AnyGen-Workbench-Portable-v1.0.0.zip`
+
+便携版会自带：
+
+- 项目代码
+- 已安装的依赖
+- 可携带的 Node.js 运行时
+- 一键启动脚本
+
+朋友拿到后只需要：
+
+1. 完整解压压缩包
+2. 双击 `一键启动.bat` 或 `一键启动.vbs`
+3. 第一次打开后填入自己的 AnyGen API Key
+
 ## 文件夹批量规则
 
 - 每个子文件夹视为一个任务

@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import path from "node:path";
+import { existsSync, promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
+const host = process.env.HOST || "127.0.0.1";
+const port = Number.parseInt(process.env.PORT || "4318", 10);
 
 let singleton = null;
 
@@ -55,6 +58,14 @@ export async function createServerApp() {
 
   app.get("/api/history", async (_request, response) => {
     response.json(await configStore.getHistory());
+  });
+
+  app.get("/api/system/diagnostics", async (_request, response, next) => {
+    try {
+      response.json(await buildDiagnostics(configStore));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post("/api/system/pick-folder", async (_request, response, next) => {
@@ -214,4 +225,111 @@ async function openLocalPath(targetPath) {
 
 function escapePowerShell(value) {
   return String(value || "").replace(/'/g, "''");
+}
+
+async function buildDiagnostics(configStore) {
+  const config = await configStore.getConfig();
+  const packageMeta = await readPackageMeta();
+  const batchSourceDirectory = config.batch.sourceDirectory || "";
+  const manualOutputDirectory = config.manual.outputDirectory || "";
+  const runtimeRoot = path.join(projectRoot, "runtime", "node");
+  const fallbackRuntimeRoot = path.join(projectRoot, "data", "runtime", "node");
+  const resolvedExecPath = path.resolve(process.execPath);
+  const usingBundledRuntime = [
+    path.resolve(runtimeRoot) + path.sep,
+    path.resolve(fallbackRuntimeRoot) + path.sep
+  ].some((prefix) => resolvedExecPath.startsWith(prefix));
+
+  const checklist = [
+    {
+      key: "api-key",
+      label: "AnyGen API Key",
+      ok: Boolean(config.anygen.apiKey?.trim()),
+      detail: config.anygen.apiKey?.trim() ? "已填写" : "还没有填写，保存配置后即可生效"
+    },
+    {
+      key: "runtime",
+      label: "运行环境",
+      ok: true,
+      detail: usingBundledRuntime ? "正在使用内置便携运行时" : "正在使用系统里的 Node.js"
+    },
+    {
+      key: "manual-output",
+      label: "手动结果目录",
+      ok: Boolean(manualOutputDirectory),
+      detail: manualOutputDirectory || "建议设置一个总输出目录，便于朋友直接找结果"
+    },
+    {
+      key: "batch-source",
+      label: "批量源目录",
+      ok: Boolean(batchSourceDirectory) && existsSync(batchSourceDirectory),
+      detail: batchSourceDirectory
+        ? batchSourceDirectory
+        : "还没有设置批量源目录，只有手动模式也可以先用"
+    }
+  ];
+
+  return {
+    app: {
+      name: "AnyGen 本地工作台",
+      version: packageMeta.version || "0.0.0",
+      homeUrl: `http://${host}:${port}/`
+    },
+    runtime: {
+      nodeVersion: process.versions.node,
+      execPath: process.execPath,
+      mode: usingBundledRuntime ? "bundled" : "system"
+    },
+    paths: {
+      projectRoot,
+      dataDirectory: configStore.dataDir,
+      historyDirectory: path.join(configStore.dataDir, "history"),
+      logDirectory: path.join(configStore.dataDir, "runtime"),
+      batchSourceDirectory,
+      manualOutputDirectory
+    },
+    config: {
+      apiKeyConfigured: Boolean(config.anygen.apiKey?.trim()),
+      baseUrl: config.anygen.baseUrl || "https://www.anygen.io",
+      operation: config.anygen.operation || "chat",
+      schedulerEnabled: Boolean(config.scheduler.enabled),
+      schedulerTime: config.scheduler.time || "09:00"
+    },
+    checklist,
+    banner: buildBannerMessage(config, checklist)
+  };
+}
+
+function buildBannerMessage(config, checklist) {
+  if (!config.anygen.apiKey?.trim()) {
+    return {
+      tone: "warning",
+      title: "还差一步就能开跑",
+      body: "先填好 AnyGen API Key 并保存配置，朋友第一次打开时也只需要做这一步。"
+    };
+  }
+
+  const missingDirectories = checklist.filter((item) => !item.ok && ["manual-output", "batch-source"].includes(item.key));
+  if (missingDirectories.length > 0) {
+    return {
+      tone: "info",
+      title: "环境已经就绪",
+      body: "现在已经能正常使用。想让新用户更顺手的话，建议再预设一个结果目录或批量源目录。"
+    };
+  }
+
+  return {
+    tone: "success",
+    title: "现在可以直接交给别人用了",
+    body: "运行环境、基础配置和目录都已经齐了，双击启动后就能直接进入界面。"
+  };
+}
+
+async function readPackageMeta() {
+  try {
+    const text = await fs.readFile(path.join(projectRoot, "package.json"), "utf8");
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
 }

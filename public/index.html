@@ -11,37 +11,65 @@
       <header class="hero">
         <div class="hero-main card">
           <div class="hero-topline">AnyGen 本地工作台</div>
-          <h1>通用对话一键落地到本地目录</h1>
-          <p class="hero-copy">
-            现在主打“通用对话”工作流。你发提示词，应用自动轮询 AnyGen，优先把返回的
-            Markdown、图片、压缩包下载到本地；如果拿到的是压缩包，就自动解压回对应目录。
-          </p>
-          <div class="hero-tags">
-            <span>手动发送</span>
-            <span>批量目录</span>
-            <span>自动下载附件</span>
-            <span>压缩包自动解压</span>
-            <span>定时运行</span>
-          </div>
-        </div>
-
-        <div class="hero-side card">
-          <div class="hero-metric">
-            <span>推荐模式</span>
-            <strong>通用对话 `chat`</strong>
-          </div>
-          <div class="hero-metric">
-            <span>结果落地</span>
-            <strong>每次任务单独目录</strong>
-          </div>
-          <div class="hero-metric">
-            <span>压缩包处理</span>
-            <strong>下载后自动解压</strong>
+          <div class="hero-row">
+            <div>
+              <h1>通用对话工作台</h1>
+              <p class="hero-copy">直接发提示词，结果自动落到本地目录。</p>
+            </div>
+            <div class="hero-tags">
+              <span>通用对话</span>
+              <span>批量处理</span>
+              <span>自动下载</span>
+              <span>压缩包解压</span>
+            </div>
           </div>
         </div>
       </header>
 
       <main class="dashboard">
+        <section class="card card-span-12 setup-card">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">开箱检查</p>
+              <h2>当前环境与首次使用</h2>
+            </div>
+            <div id="runtime-badge" class="runtime-badge">检测中</div>
+          </div>
+
+          <div class="setup-grid">
+            <div class="setup-main compact-stack">
+              <div id="setup-banner" class="setup-banner tone-info">
+                <strong>正在检测环境...</strong>
+                <p>稍等一下，我正在确认这台机器现在能不能直接开跑。</p>
+              </div>
+              <div id="setup-checklist" class="setup-checklist"></div>
+            </div>
+
+            <aside class="setup-side">
+              <div class="diag-grid">
+                <div class="meta-box diag-box">
+                  <span class="meta-label">访问地址</span>
+                  <span id="home-url" class="meta-value">检测中</span>
+                </div>
+                <div class="meta-box diag-box">
+                  <span class="meta-label">运行方式</span>
+                  <span id="runtime-mode" class="meta-value">检测中</span>
+                </div>
+                <div class="meta-box diag-box">
+                  <span class="meta-label">定时状态</span>
+                  <span id="scheduler-summary" class="meta-value">检测中</span>
+                </div>
+              </div>
+
+              <div class="button-row top-gap">
+                <button id="open-project-root" class="button ghost compact" type="button">打开程序目录</button>
+                <button id="open-data-dir" class="button ghost compact" type="button">打开数据目录</button>
+                <button id="open-log-dir" class="button ghost compact" type="button">打开日志目录</button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
         <section class="card card-span-7">
           <div class="section-head">
             <div>
@@ -90,46 +118,32 @@
           </div>
         </section>
 
-        <section class="card card-span-5">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">当前能力</p>
-              <h2>处理说明</h2>
-            </div>
-          </div>
-
-          <div class="summary-list">
-            <div class="summary-item">
-              <strong>优先下载真实附件</strong>
-              <p>如果 AnyGen 直接返回 Markdown、图片或压缩包，应用会优先保存这些原始文件。</p>
-            </div>
-            <div class="summary-item">
-              <strong>建议直接要压缩包</strong>
-              <p>后续你可以在提示词里要求“请把图文与素材打成 zip 返回”，应用会自动下载并解压。</p>
-            </div>
-            <div class="summary-item">
-              <strong>历史记录直达本次结果</strong>
-              <p>最近记录里展示的是每次任务真正创建的结果目录，不再只是总目录。</p>
-            </div>
-          </div>
-        </section>
-
         <section class="card card-span-7">
           <div class="section-head">
             <div>
               <p class="section-kicker">手动模式</p>
               <h2>发送提示词</h2>
             </div>
-            <button id="run-manual" class="button primary">立即运行</button>
+            <div class="button-row">
+              <button id="run-manual" class="button primary">立即运行</button>
+            </div>
           </div>
 
           <div class="form-grid form-grid-2">
             <label class="field field-span-2">
+              <span>提示词模板</span>
+              <div class="template-picker inline-template-picker">
+                <select id="manual-template-select"></select>
+                <button id="open-template-modal" class="button ghost compact" type="button">添加</button>
+              </div>
+              <div id="manual-template-meta" class="template-meta">选择一个模板后，会立刻替换下面的提示词内容。</div>
+            </label>
+            <label class="field field-span-2">
               <span>提示词</span>
               <textarea
                 id="manual-prompt"
-                rows="10"
-                placeholder="例如：请生成一套化妆培训学校的小红书图文素材，并把文案与图片打包成 zip 返回。"
+                rows="14"
+                placeholder="点击“填充选中提示词”后，会把默认提示词放进这里。你也可以手动输入自己的提示词。"
               ></textarea>
             </label>
             <label class="field">
@@ -147,7 +161,7 @@
               </div>
             </label>
             <label class="field field-span-2">
-              <span>附加上传文件</span>
+              <span>上传参考文件</span>
               <input id="manual-files" type="file" multiple />
             </label>
           </div>
@@ -250,14 +264,60 @@
           <div class="section-head">
             <div>
               <p class="section-kicker">最近记录</p>
-              <h2>结果目录与文件</h2>
+              <h2>结果目录</h2>
             </div>
             <button id="refresh-history" class="button ghost">刷新</button>
           </div>
           <div id="history-list" class="history-list"></div>
         </section>
+
+        <section class="card card-span-12 intro-card">
+          <div class="section-head section-head-compact">
+            <div>
+              <p class="section-kicker">使用说明</p>
+              <h2>通用对话一键落地到本地目录</h2>
+            </div>
+          </div>
+          <div class="summary-list compact-summary-list">
+            <div class="summary-item">
+              <strong>优先保存真实附件</strong>
+              <p>如果 AnyGen 返回 Markdown、图片或压缩包，应用会优先保存原始结果。</p>
+            </div>
+            <div class="summary-item">
+              <strong>建议直接要 zip</strong>
+              <p>你可以在提示词里要求把图文和素材打包成 zip，应用会自动下载并解压。</p>
+            </div>
+            <div class="summary-item">
+              <strong>结果直达本次目录</strong>
+              <p>历史记录里展示的是每次任务真实生成的结果目录，方便直接打开查看。</p>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
+
+    <dialog id="template-modal" class="template-modal">
+      <form id="template-form" class="template-form" method="dialog">
+        <div class="section-head section-head-compact">
+          <div>
+            <p class="section-kicker">提示词模板</p>
+            <h2>添加新提示词</h2>
+          </div>
+        </div>
+        <label class="field">
+          <span>标题</span>
+          <input id="template-name-input" type="text" placeholder="例如：摄影笔记默认提示词" />
+        </label>
+        <label class="field">
+          <span>提示词内容</span>
+          <textarea id="template-content-input" rows="12" placeholder="把要保存的提示词完整贴在这里"></textarea>
+        </label>
+        <div class="button-row modal-actions">
+          <button id="cancel-template-modal" class="button ghost" type="button">取消</button>
+          <button id="submit-template-modal" class="button primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

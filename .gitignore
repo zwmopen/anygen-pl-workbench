@@ -1,4 +1,6 @@
 node_modules/
+runtime/
+release/
 data/
 !data/.gitkeep
 data/history/

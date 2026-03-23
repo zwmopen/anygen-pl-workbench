@@ -5,6 +5,14 @@ const elements = {
   language: document.querySelector("#language"),
   style: document.querySelector("#style"),
   extraHeaders: document.querySelector("#extra-headers"),
+  manualTemplateSelect: document.querySelector("#manual-template-select"),
+  manualTemplateMeta: document.querySelector("#manual-template-meta"),
+  openTemplateModal: document.querySelector("#open-template-modal"),
+  templateModal: document.querySelector("#template-modal"),
+  templateForm: document.querySelector("#template-form"),
+  templateNameInput: document.querySelector("#template-name-input"),
+  templateContentInput: document.querySelector("#template-content-input"),
+  cancelTemplateModal: document.querySelector("#cancel-template-modal"),
   manualPrompt: document.querySelector("#manual-prompt"),
   manualOutput: document.querySelector("#manual-output"),
   manualReferenceDir: document.querySelector("#manual-reference-dir"),
@@ -18,15 +26,28 @@ const elements = {
   schedulerEnabled: document.querySelector("#scheduler-enabled"),
   schedulerTime: document.querySelector("#scheduler-time"),
   schedulerTaskName: document.querySelector("#scheduler-task-name"),
+  runtimeBadge: document.querySelector("#runtime-badge"),
+  setupBanner: document.querySelector("#setup-banner"),
+  setupChecklist: document.querySelector("#setup-checklist"),
+  homeUrl: document.querySelector("#home-url"),
+  runtimeMode: document.querySelector("#runtime-mode"),
+  schedulerSummary: document.querySelector("#scheduler-summary"),
+  openProjectRoot: document.querySelector("#open-project-root"),
+  openDataDir: document.querySelector("#open-data-dir"),
+  openLogDir: document.querySelector("#open-log-dir"),
   historyList: document.querySelector("#history-list"),
   statusLog: document.querySelector("#status-log")
 };
+
+let latestDiagnostics = null;
+let promptTemplates = [];
 
 boot();
 
 async function boot() {
   bindEvents();
   await hydrateConfig();
+  await refreshDiagnostics();
   await refreshHistory();
 }
 
@@ -37,6 +58,13 @@ function bindEvents() {
   document.querySelector("#run-schedule-now").addEventListener("click", runScheduleNow);
   document.querySelector("#register-task").addEventListener("click", registerSystemTask);
   document.querySelector("#refresh-history").addEventListener("click", refreshHistory);
+  elements.manualTemplateSelect.addEventListener("change", applySelectedPromptTemplate);
+  elements.openTemplateModal.addEventListener("click", openPromptTemplateModal);
+  elements.cancelTemplateModal.addEventListener("click", closePromptTemplateModal);
+  elements.templateForm.addEventListener("submit", submitPromptTemplate);
+  elements.openProjectRoot.addEventListener("click", () => openDiagnosticPath("projectRoot"));
+  elements.openDataDir.addEventListener("click", () => openDiagnosticPath("dataDirectory"));
+  elements.openLogDir.addEventListener("click", () => openDiagnosticPath("logDirectory"));
 
   document.querySelectorAll("[data-pick]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -63,11 +91,14 @@ async function hydrateConfig() {
   const config = await requestJson("/api/config");
   elements.apiKey.value = config.anygen.apiKey || "";
   elements.baseUrl.value = config.anygen.baseUrl || "";
-  elements.operation.value = config.anygen.operation || "chat";
+  elements.operation.value = config.anygen.operation === "doc" ? "chat" : (config.anygen.operation || "chat");
   elements.language.value = config.anygen.language || "zh-CN";
   elements.style.value = config.anygen.style || "";
   elements.extraHeaders.value = config.anygen.extraHeaders || "";
-  elements.manualPrompt.value = config.manual.prompt || "";
+  promptTemplates = normalizePromptTemplates(config.manual.promptTemplates);
+  renderPromptTemplateOptions(config.manual.selectedPromptTemplateId);
+  const manualPrompt = String(config.manual.prompt || "").trim();
+  elements.manualPrompt.value = manualPrompt || (getSelectedPromptTemplate()?.content || "");
   elements.manualOutput.value = config.manual.outputDirectory || "";
   elements.manualReferenceDir.value = config.manual.referenceDirectory || "";
   elements.batchMode.value = config.batch.mode || "folders";
@@ -79,20 +110,25 @@ async function hydrateConfig() {
   elements.schedulerEnabled.checked = Boolean(config.scheduler.enabled);
   elements.schedulerTime.value = config.scheduler.time || "09:00";
   elements.schedulerTaskName.value = config.scheduler.taskName || "AnyGen Workbench Daily";
+  renderManualTemplateState();
 }
 
-async function saveConfig() {
+async function saveConfig(options = {}) {
+  const { silent = false } = options;
   await requestJson("/api/config", {
     method: "POST",
     body: JSON.stringify(collectConfigPayload())
   });
-  log("配置已保存。");
+  await refreshDiagnostics();
+  if (!silent) {
+    log("配置已保存。");
+  }
 }
 
 async function runManual() {
   const prompt = elements.manualPrompt.value.trim();
   if (!prompt) {
-    throwAndLog("请先输入提示词。");
+    throwAndLog("请填充提示词。");
     return;
   }
 
@@ -186,6 +222,63 @@ async function refreshHistory() {
   }
 }
 
+async function refreshDiagnostics() {
+  latestDiagnostics = await requestJson("/api/system/diagnostics");
+  renderDiagnostics(latestDiagnostics);
+}
+
+function renderDiagnostics(diagnostics) {
+  const modeLabel = diagnostics?.runtime?.mode === "bundled" ? "便携运行时" : "系统 Node";
+  elements.runtimeBadge.textContent = modeLabel;
+  elements.runtimeBadge.className = `runtime-badge ${diagnostics?.runtime?.mode === "bundled" ? "is-bundled" : "is-system"}`;
+
+  const banner = diagnostics?.banner || {
+    tone: "info",
+    title: "正在等待环境检测",
+    body: "请稍等片刻。"
+  };
+
+  elements.setupBanner.className = `setup-banner tone-${banner.tone || "info"}`;
+  elements.setupBanner.innerHTML = `
+    <strong>${escapeHtml(banner.title || "环境检测")}</strong>
+    <p>${escapeHtml(banner.body || "")}</p>
+  `;
+
+  const checklistItems = Array.isArray(diagnostics?.checklist) ? diagnostics.checklist : [];
+  elements.setupChecklist.innerHTML = checklistItems.map((item) => `
+    <article class="check-item ${item.ok ? "is-ok" : "is-pending"}">
+      <div class="check-dot">${item.ok ? "已就绪" : "待处理"}</div>
+      <div class="check-copy">
+        <strong>${escapeHtml(item.label || "-")}</strong>
+        <p>${escapeHtml(item.detail || "")}</p>
+      </div>
+    </article>
+  `).join("");
+
+  elements.homeUrl.textContent = diagnostics?.app?.homeUrl || "-";
+  elements.runtimeMode.textContent = `${modeLabel} / Node ${diagnostics?.runtime?.nodeVersion || "-"}`;
+  elements.schedulerSummary.textContent = diagnostics?.config?.schedulerEnabled
+    ? `已开启，每天 ${diagnostics.config.schedulerTime || "09:00"}`
+    : "未开启";
+}
+
+async function openDiagnosticPath(key) {
+  const targetPath = latestDiagnostics?.paths?.[key];
+  if (!targetPath) {
+    throwAndLog("当前还没有检测到可打开的路径。");
+    return;
+  }
+
+  try {
+    await requestJson("/api/system/open-path", {
+      method: "POST",
+      body: JSON.stringify({ path: targetPath })
+    });
+  } catch (error) {
+    throwAndLog(error.message);
+  }
+}
+
 function renderHistoryItem(item) {
   const article = document.createElement("article");
   article.className = "history-item";
@@ -198,40 +291,18 @@ function renderHistoryItem(item) {
   const statusLabel = formatStatus(item.status);
 
   article.innerHTML = `
-    <div class="history-top">
-      <div class="history-title">
-        <strong>${escapeHtml(item.name || "未命名任务")}</strong>
+    <div class="history-compact">
+      <div class="history-mainline">
+        <strong class="history-main-title">${escapeHtml(item.name || "未命名任务")}</strong>
         <span class="status-chip ${escapeHtml(item.status || "unknown")}">${escapeHtml(statusLabel)}</span>
+        <span class="history-inline-meta">${escapeHtml(modeLabel)}</span>
+        <span class="history-inline-meta">${escapeHtml(createdAt)}</span>
+        <span class="history-inline-meta">${fileCount} 个文件</span>
       </div>
-      <div class="history-actions">
-        <button class="button ghost compact" type="button" data-action="open-dir">打开结果目录</button>
-        ${item.taskUrl ? '<button class="button ghost compact" type="button" data-action="open-task">打开任务页</button>' : ""}
+      <div class="history-subline">
+        <code class="path-pill compact-path-pill">${escapeHtml(item.outputDirectory || "-")}</code>
+        ${item.outputDirectory ? '<button class="button ghost compact" type="button" data-action="open-dir">打开结果目录</button>' : ""}
       </div>
-    </div>
-    <div class="history-meta">
-      <div class="meta-box">
-        <span class="meta-label">模式</span>
-        <span class="meta-value">${escapeHtml(modeLabel)}</span>
-      </div>
-      <div class="meta-box">
-        <span class="meta-label">时间</span>
-        <span class="meta-value">${escapeHtml(createdAt)}</span>
-      </div>
-      <div class="meta-box">
-        <span class="meta-label">落地文件数</span>
-        <span class="meta-value">${fileCount}</span>
-      </div>
-      <div class="meta-box">
-        <span class="meta-label">任务 ID</span>
-        <span class="meta-value">${escapeHtml(item.taskId || "-")}</span>
-      </div>
-    </div>
-    <div class="result-path-row">
-      <div class="result-path-text">
-        <span class="meta-label">本次结果目录</span>
-        <code class="path-pill">${escapeHtml(item.outputDirectory || "-")}</code>
-      </div>
-      <button class="button ghost compact" type="button" data-action="open-dir-inline">直达本次目录</button>
     </div>
     ${renderFileList(item.files)}
   `;
@@ -248,12 +319,6 @@ function renderHistoryItem(item) {
   };
 
   article.querySelector('[data-action="open-dir"]')?.addEventListener("click", openDirectory);
-  article.querySelector('[data-action="open-dir-inline"]')?.addEventListener("click", openDirectory);
-  article.querySelector('[data-action="open-task"]')?.addEventListener("click", () => {
-    if (item.taskUrl) {
-      window.open(item.taskUrl, "_blank", "noopener,noreferrer");
-    }
-  });
 
   return article;
 }
@@ -295,7 +360,9 @@ function collectConfigPayload() {
     manual: {
       prompt: elements.manualPrompt.value,
       outputDirectory: elements.manualOutput.value.trim(),
-      referenceDirectory: elements.manualReferenceDir.value.trim()
+      referenceDirectory: elements.manualReferenceDir.value.trim(),
+      selectedPromptTemplateId: elements.manualTemplateSelect.value,
+      promptTemplates
     },
     batch: {
       mode: elements.batchMode.value,
@@ -311,6 +378,117 @@ function collectConfigPayload() {
       taskName: elements.schedulerTaskName.value.trim()
     }
   };
+}
+
+function normalizePromptTemplates(templates) {
+  const normalized = Array.isArray(templates)
+    ? templates
+    .map((template, index) => ({
+      id: String(template?.id || `prompt-template-${index + 1}`),
+      name: String(template?.name || `提示词 ${index + 1}`),
+      content: String(template?.content || "")
+    }))
+    .filter((template) => template.content.trim())
+    : [];
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return [{
+    id: "default-manual-template",
+    name: "默认提示词",
+    content: ""
+  }];
+}
+
+function renderPromptTemplateOptions(selectedId) {
+  const preferredId = promptTemplates.some((template) => template.id === selectedId)
+    ? selectedId
+    : promptTemplates[0]?.id;
+
+  elements.manualTemplateSelect.innerHTML = promptTemplates.map((template) => `
+    <option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>
+  `).join("");
+
+  elements.manualTemplateSelect.value = preferredId || "";
+}
+
+function renderManualTemplateState() {
+  const template = getSelectedPromptTemplate();
+  const placeholder = template?.content?.trim()
+    ? template.content
+    : "选择一个模板后，会自动替换这里的内容。你也可以手动输入自己的提示词。";
+
+  elements.manualPrompt.placeholder = placeholder;
+  elements.manualTemplateMeta.textContent = template
+    ? `当前已选：${template.name}。你切换模板时，下面的提示词会立刻跟着切换。`
+    : "先选一个提示词模板，下面的内容会自动跟着切换。";
+}
+
+function getSelectedPromptTemplate() {
+  const selectedId = elements.manualTemplateSelect.value;
+  return promptTemplates.find((template) => template.id === selectedId) || null;
+}
+
+async function applySelectedPromptTemplate() {
+  const template = getSelectedPromptTemplate();
+  if (!template?.content?.trim()) {
+    renderManualTemplateState();
+    return;
+  }
+
+  elements.manualPrompt.value = template.content;
+  renderManualTemplateState();
+  await saveConfig({ silent: true });
+}
+
+function openPromptTemplateModal() {
+  elements.templateNameInput.value = "";
+  elements.templateContentInput.value = elements.manualPrompt.value.trim();
+  if (typeof elements.templateModal.showModal === "function") {
+    elements.templateModal.showModal();
+  } else {
+    elements.templateModal.setAttribute("open", "open");
+  }
+}
+
+function closePromptTemplateModal() {
+  if (typeof elements.templateModal.close === "function") {
+    elements.templateModal.close();
+  } else {
+    elements.templateModal.removeAttribute("open");
+  }
+}
+
+async function submitPromptTemplate(event) {
+  event.preventDefault();
+
+  const name = elements.templateNameInput.value.trim();
+  const content = elements.templateContentInput.value.trim();
+  if (!name) {
+    throwAndLog("请先填写提示词标题。");
+    elements.templateNameInput.focus();
+    return;
+  }
+  if (!content) {
+    throwAndLog("请先填写提示词内容。");
+    elements.templateContentInput.focus();
+    return;
+  }
+
+  const nextTemplate = {
+    id: `prompt-template-${Date.now()}`,
+    name,
+    content
+  };
+
+  promptTemplates = [...promptTemplates, nextTemplate];
+  renderPromptTemplateOptions(nextTemplate.id);
+  applySelectedPromptTemplate();
+  await saveConfig({ silent: true });
+  closePromptTemplateModal();
+  log(`已新增提示词模板：${nextTemplate.name}`);
 }
 
 async function requestJson(url, options = {}, useJsonHeaders = true) {

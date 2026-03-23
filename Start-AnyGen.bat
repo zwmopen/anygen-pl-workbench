@@ -12,7 +12,7 @@ if "%EXITCODE%"=="0" (
 
 if not "%EXITCODE%"=="0" (
   echo.
-  echo 启动失败，按任意键关闭窗口。
+  echo Launch failed. Press any key to close.
   pause >nul
 )
 

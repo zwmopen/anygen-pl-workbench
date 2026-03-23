@@ -11,12 +11,35 @@ const configFile = path.join(dataDir, "settings.json");
 const historyFile = path.join(dataDir, "history", "index.json");
 const localApiKeyFile = path.join(rootDir, "API key.txt");
 const defaultBatchSourceDir = path.join(rootDir, "作品");
+const defaultManualPrompt = `帮我做笔记啊
+
+1. 封面制作：基于提供的5张图片，制作小红书封面，视觉高级、文字有转化力，标题需偏向点击率，吸引对摄影感兴趣的人群；可指定单张封面做终稿，并将卖点压缩为3条钩子。
+2. 配图制作：除封面外，其余内容配图各做1张，另外5张配图需提供2套方案，共10张配图。
+3. 文案撰写：
+- 结构遵循：痛点/提问 → 优势背书 → 课程/班型 → 适合人群 → 地域/校区 → CTA
+- 输出2篇小红书文案，单篇不超过1000字，风格自然不生硬，正文需有良好排版和表情符号。
+4. 发布平台：小红书。
+5. 图片规格：3:4 | 2K档 1792×2400 | 高级排版 | 偏点击率。
+6. 可以是参考图里面的场景，但是如果有人脸出现，那脸和衣服绝对不能是原来的人物，要出现改变生成。
+
+补充背景
+
+目标人群：对摄影感兴趣、希望获得摄影帮助的人群，想找教程，想学习的人群。
+核心目的：提升点击率与转化。`;
+
+const defaultPromptTemplates = [
+  {
+    id: "xiaohongshu-photography-default",
+    name: "摄影笔记默认提示词",
+    content: defaultManualPrompt
+  }
+];
 
 export const defaultConfig = {
   anygen: {
     apiKey: "",
     baseUrl: "https://www.anygen.io",
-    operation: "doc",
+    operation: "chat",
     language: "zh-CN",
     style: "clean editorial for 小红书 图文",
     slideCount: "",
@@ -30,7 +53,9 @@ export const defaultConfig = {
   manual: {
     prompt: "",
     outputDirectory: "",
-    referenceDirectory: ""
+    referenceDirectory: "",
+    selectedPromptTemplateId: "xiaohongshu-photography-default",
+    promptTemplates: defaultPromptTemplates
   },
   batch: {
     mode: "folders",
@@ -68,6 +93,9 @@ export class ConfigStore {
   async getConfig() {
     const saved = await readJson(this.configFile, {});
     const merged = mergeDeep(defaultConfig, saved);
+    if (!saved?.anygen?.operation || saved.anygen.operation === "doc") {
+      merged.anygen.operation = "chat";
+    }
     const detectedApiKey = await detectLocalApiKey();
     if (!merged.anygen.apiKey && detectedApiKey) {
       merged.anygen.apiKey = detectedApiKey;
@@ -92,7 +120,13 @@ export class ConfigStore {
   }
 
   async getHistory() {
-    return await readJson(this.historyFile, []);
+    const items = await readJson(this.historyFile, []);
+    return await filterAsync(items, async (entry) => {
+      if (!entry?.outputDirectory) {
+        return true;
+      }
+      return await fileExists(entry.outputDirectory);
+    });
   }
 
   async appendHistory(entry) {
@@ -142,4 +176,9 @@ async function detectLocalApiKey() {
   } catch {
     return "";
   }
+}
+
+async function filterAsync(items, predicate) {
+  const checks = await Promise.all(items.map((item) => predicate(item)));
+  return items.filter((_item, index) => checks[index]);
 }

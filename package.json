@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "run-scheduled": "node server.js --run-scheduled",
-    "smoke-test": "node scripts/smoke-test.mjs"
+    "smoke-test": "node scripts/smoke-test.mjs",
+    "build-portable": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-portable-release.ps1"
   },
   "engines": {
     "node": ">=20"

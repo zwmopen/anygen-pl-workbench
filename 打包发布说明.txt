@@ -1,0 +1,46 @@
+AnyGen 打包发布说明
+
+这个项目当前的正式发布输出位置是：
+
+1. 便携版目录
+   D:\AICode\anygen-pL\release\AnyGen-Workbench-Portable
+
+2. 可直接发给朋友的压缩包
+   D:\AICode\anygen-pL\release\AnyGen-Workbench-Portable-v1.0.0.zip
+
+以后如果你要重新打包，按下面做：
+
+1. 进入项目目录
+   D:\AICode\anygen-pL
+
+2. 运行命令
+   npm run build-portable
+
+3. 打包完成后，去 release 目录拿成品
+   release\AnyGen-Workbench-Portable
+   release\AnyGen-Workbench-Portable-v1.0.0.zip
+
+建议发给别人时，直接发送 zip：
+
+- AnyGen-Workbench-Portable-v1.0.0.zip
+
+不要直接发源码目录，原因是：
+
+- 源码目录可能依赖你电脑上的 Node.js 环境
+- 源码目录里可能残留测试文件、日志和个人配置
+- 便携版已经带好运行时和一键启动脚本，更适合直接交付
+
+如果你重新打包前想先清理一下，可以删这些非正式发布文件：
+
+- 根目录里的 tmp-*.ps1
+- release-test
+- release\_downloads
+
+朋友怎么使用，直接看便携包里的：
+
+- 便携版使用说明.txt
+
+额外建议：
+
+- 发给朋友时，告诉他优先双击 Start-AnyGen.bat
+- 中文入口 一键启动.bat 也保留着，方便国内用户

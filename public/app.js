@@ -2,7 +2,6 @@ const elements = {
   navLinks: Array.from(document.querySelectorAll("[data-tab]")),
   viewPanels: Array.from(document.querySelectorAll("[data-panel]")),
   apiKey: document.querySelector("#api-key"),
-  baseUrl: document.querySelector("#base-url"),
   operation: document.querySelector("#operation"),
   language: document.querySelector("#language"),
   style: document.querySelector("#style"),
@@ -28,12 +27,6 @@ const elements = {
   schedulerTime: document.querySelector("#scheduler-time"),
   schedulerTaskName: document.querySelector("#scheduler-task-name"),
   setupChecklist: document.querySelector("#setup-checklist"),
-  homeUrl: document.querySelector("#home-url"),
-  runtimeMode: document.querySelector("#runtime-mode"),
-  schedulerSummary: document.querySelector("#scheduler-summary"),
-  openOutputDir: document.querySelector("#open-output-dir"),
-  openLogDir: document.querySelector("#open-log-dir"),
-  openHistoryDir: document.querySelector("#open-history-dir"),
   historySearch: document.querySelector("#history-search"),
   historyStatusFilter: document.querySelector("#history-status-filter"),
   clearStatusLog: document.querySelector("#clear-status-log"),
@@ -51,10 +44,110 @@ let historyItemsCache = [];
 boot();
 
 async function boot() {
+  streamlineProductUi();
   bindEvents();
   await hydrateConfig();
   await refreshDiagnostics();
   await refreshHistory();
+}
+
+function simplifySettingsUi() {
+  const languageField = elements.language?.closest(".field");
+  languageField?.remove();
+
+  const styleField = elements.style?.closest(".field");
+  if (!styleField || !elements.style) {
+    return;
+  }
+
+  const styleLabel = styleField.querySelector("span");
+  if (styleLabel) {
+    styleLabel.textContent = "补充要求（可留空）";
+  }
+
+  elements.style.placeholder = "例如：更简洁、更商务、更像提案稿";
+
+  let styleNote = styleField.querySelector(".field-note");
+  if (!styleNote) {
+    styleNote = document.createElement("div");
+    styleNote.className = "field-note";
+    styleField.appendChild(styleNote);
+  }
+  styleNote.textContent = "这不是必填项，只是给 AnyGen 再加一句补充要求。";
+}
+
+function streamlineProductUi() {
+  document.querySelector(".sidebar-more-settings")?.remove();
+  document.querySelector(".compose-intro")?.remove();
+
+  elements.language = null;
+  elements.style = null;
+
+  makePathFieldReadonly("manual-output", {
+    pickLabel: "更换",
+    secondaryAction: {
+      type: "reset",
+      label: "恢复默认"
+    }
+  });
+  makePathFieldReadonly("manual-reference-dir", {
+    pickLabel: "更换",
+    secondaryAction: {
+      type: "clear",
+      label: "清空"
+    }
+  });
+  makePathFieldReadonly("batch-source", {
+    pickLabel: "更换",
+    secondaryAction: {
+      type: "clear",
+      label: "清空"
+    }
+  });
+  makePathFieldReadonly("batch-sheet", {
+    pickLabel: "更换",
+    secondaryAction: {
+      type: "clear",
+      label: "清空"
+    }
+  });
+}
+
+function makePathFieldReadonly(targetId, options = {}) {
+  const input = document.querySelector(`#${targetId}`);
+  const pickButton = document.querySelector(`[data-pick="${targetId}"]`);
+  const row = input?.closest(".inline-path");
+  if (!input || !pickButton || !row) {
+    return;
+  }
+
+  input.readOnly = true;
+  pickButton.textContent = options.pickLabel || "更换";
+
+  let actions = row.querySelector(".inline-actions");
+  if (!actions) {
+    actions = document.createElement("div");
+    actions.className = "inline-actions";
+    row.appendChild(actions);
+  }
+  actions.appendChild(pickButton);
+
+  const secondaryAction = options.secondaryAction;
+  if (!secondaryAction) {
+    return;
+  }
+
+  const selector = `[data-${secondaryAction.type}="${targetId}"]`;
+  if (actions.querySelector(selector)) {
+    return;
+  }
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "button ghost compact subtle";
+  button.textContent = secondaryAction.label;
+  button.dataset[secondaryAction.type] = targetId;
+  actions.appendChild(button);
 }
 
 function bindEvents() {
@@ -71,9 +164,6 @@ function bindEvents() {
   elements.openTemplateModal.addEventListener("click", openPromptTemplateModal);
   elements.cancelTemplateModal.addEventListener("click", closePromptTemplateModal);
   elements.templateForm.addEventListener("submit", submitPromptTemplate);
-  elements.openOutputDir.addEventListener("click", () => openAppLocation("manualOutputDirectory", "保存位置"));
-  elements.openLogDir.addEventListener("click", () => openAppLocation("logDirectory", "日志目录"));
-  elements.openHistoryDir.addEventListener("click", () => openAppLocation("historyDirectory", "历史目录"));
   elements.clearStatusLog.addEventListener("click", clearStatusLog);
   elements.historySearch.addEventListener("input", renderHistoryList);
   elements.historyStatusFilter.addEventListener("change", renderHistoryList);
@@ -100,15 +190,43 @@ function bindEvents() {
       }
     });
   });
+
+  document.querySelectorAll("[data-clear]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetId = button.dataset.clear;
+      const input = document.querySelector(`#${targetId}`);
+      if (!input) {
+        return;
+      }
+      input.value = "";
+      await saveConfig({ silent: true });
+    });
+  });
+
+  document.querySelectorAll("[data-reset]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetId = button.dataset.reset;
+      const input = document.querySelector(`#${targetId}`);
+      if (!input) {
+        return;
+      }
+
+      input.value = latestDiagnostics?.defaults?.downloadsDirectory || "";
+      await saveConfig({ silent: true });
+    });
+  });
 }
 
 async function hydrateConfig() {
   const config = await requestJson("/api/config");
   elements.apiKey.value = config.anygen.apiKey || "";
-  elements.baseUrl.value = config.anygen.baseUrl || "";
   elements.operation.value = config.anygen.operation || "chat";
-  elements.language.value = config.anygen.language || "zh-CN";
-  elements.style.value = config.anygen.style || "";
+  if (elements.language) {
+    elements.language.value = config.anygen.language || "zh-CN";
+  }
+  if (elements.style) {
+    elements.style.value = config.anygen.style || "";
+  }
   promptTemplates = normalizePromptTemplates(config.manual.promptTemplates);
   renderPromptTemplateOptions(config.manual.selectedPromptTemplateId);
   const manualPrompt = String(config.manual.prompt || "").trim();
@@ -278,14 +396,6 @@ function renderDiagnostics(diagnostics) {
       </div>
     </article>
   `).join("");
-
-  elements.homeUrl.textContent = diagnostics?.paths?.manualOutputDirectory || "-";
-  elements.runtimeMode.textContent = diagnostics?.runtime?.mode === "bundled"
-    ? `内置便携版，可直接打开就用`
-    : `使用本机已安装环境`;
-  elements.schedulerSummary.textContent = diagnostics?.config?.schedulerEnabled
-    ? `已开启，每天 ${diagnostics.config.schedulerTime || "09:00"}`
-    : "未开启";
 }
 
 function renderHistoryOverview(items) {
@@ -347,18 +457,6 @@ function filterHistoryItems(items) {
 
     return haystack.includes(query);
   });
-}
-
-async function openAppLocation(key, label) {
-  try {
-    const result = await requestJson("/api/system/open-location", {
-      method: "POST",
-      body: JSON.stringify({ key })
-    });
-    log(`已打开${label}：${result.path}`);
-  } catch (error) {
-    throwAndLog(error.message);
-  }
 }
 
 function renderHistoryItem(item) {
@@ -457,10 +555,9 @@ function collectConfigPayload() {
   return {
     anygen: {
       apiKey: elements.apiKey.value.trim(),
-      baseUrl: elements.baseUrl.value.trim(),
       operation: elements.operation.value,
-      language: elements.language.value,
-      style: elements.style.value.trim()
+      language: elements.language?.value || "zh-CN",
+      style: elements.style?.value?.trim() || ""
     },
     manual: {
       prompt: elements.manualPrompt.value,

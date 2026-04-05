@@ -40,15 +40,6 @@
             </button>
           </nav>
 
-          <div class="sidebar-group">
-            <div class="sidebar-title">快速入口</div>
-            <div class="sidebar-actions">
-              <button id="open-output-dir" class="button ghost compact" type="button">打开保存位置</button>
-              <button id="open-history-dir" class="button ghost compact" type="button">打开历史记录</button>
-              <button id="open-log-dir" class="button ghost compact" type="button">打开日志</button>
-            </div>
-          </div>
-
           <section class="sidebar-settings">
             <div class="sidebar-title">偏好设置</div>
             <div class="field-note">常用的默认值放这里，改完直接保存。</div>
@@ -88,11 +79,6 @@
                   <span>风格提示</span>
                   <input id="style" type="text" placeholder="例如：清爽海报、电商图文、专业报告" />
                 </label>
-
-                <label class="field">
-                  <span>基础地址</span>
-                  <input id="base-url" type="text" placeholder="https://www.anygen.io" />
-                </label>
               </div>
             </details>
           </section>
@@ -101,23 +87,9 @@
         <main class="workspace">
           <section class="setup-strip card">
             <details class="details-card env-details" open>
-              <summary>状态详情</summary>
+              <summary>状态</summary>
               <div id="setup-checklist" class="setup-checklist"></div>
             </details>
-            <div class="setup-meta">
-              <div class="meta-box">
-                <span class="meta-label">默认保存位置</span>
-                <span id="home-url" class="meta-value">检测中</span>
-              </div>
-              <div class="meta-box">
-                <span class="meta-label">启动方式</span>
-                <span id="runtime-mode" class="meta-value">检测中</span>
-              </div>
-              <div class="meta-box">
-                <span class="meta-label">定时状态</span>
-                <span id="scheduler-summary" class="meta-value">检测中</span>
-              </div>
-            </div>
           </section>
 
           <section class="view-panel is-active" data-panel="compose">

@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import os from "node:os";
 import path from "node:path";
 import { existsSync, promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
@@ -352,6 +353,9 @@ async function buildDiagnostics(configStore) {
       logDirectory: path.join(configStore.dataDir, "runtime"),
       batchSourceDirectory,
       manualOutputDirectory
+    },
+    defaults: {
+      downloadsDirectory: path.join(os.homedir(), "Downloads")
     },
     config: {
       apiKeyConfigured: Boolean(config.anygen.apiKey?.trim()),

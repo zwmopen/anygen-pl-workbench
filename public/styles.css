@@ -103,7 +103,7 @@ button {
 
 .app-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 224px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -179,7 +179,7 @@ button {
 
 .sidebar-settings {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .sidebar-settings .button {
@@ -202,13 +202,9 @@ button {
   padding: 18px;
 }
 
-.setup-strip > .details-card,
-.setup-strip > .setup-meta {
-  min-width: 0;
-}
-
 .setup-strip > .details-card {
   padding: 4px 0 0;
+  min-width: 0;
 }
 
 .setup-strip .details-card summary {
@@ -227,12 +223,6 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-}
-
-.setup-meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .check-item {
@@ -485,6 +475,17 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.inline-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline-path input[readonly] {
+  cursor: default;
 }
 
 .details-card {
@@ -963,7 +964,6 @@ select:focus {
   }
 
   .setup-checklist,
-  .setup-meta,
   .history-overview,
   .compose-intro {
     grid-template-columns: 1fr;

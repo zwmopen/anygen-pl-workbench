@@ -1,10 +1,11 @@
 const elements = {
+  navLinks: Array.from(document.querySelectorAll("[data-tab]")),
+  viewPanels: Array.from(document.querySelectorAll("[data-panel]")),
   apiKey: document.querySelector("#api-key"),
   baseUrl: document.querySelector("#base-url"),
   operation: document.querySelector("#operation"),
   language: document.querySelector("#language"),
   style: document.querySelector("#style"),
-  extraHeaders: document.querySelector("#extra-headers"),
   manualTemplateSelect: document.querySelector("#manual-template-select"),
   manualTemplateMeta: document.querySelector("#manual-template-meta"),
   openTemplateModal: document.querySelector("#open-template-modal"),
@@ -26,21 +27,26 @@ const elements = {
   schedulerEnabled: document.querySelector("#scheduler-enabled"),
   schedulerTime: document.querySelector("#scheduler-time"),
   schedulerTaskName: document.querySelector("#scheduler-task-name"),
-  runtimeBadge: document.querySelector("#runtime-badge"),
-  setupBanner: document.querySelector("#setup-banner"),
   setupChecklist: document.querySelector("#setup-checklist"),
   homeUrl: document.querySelector("#home-url"),
   runtimeMode: document.querySelector("#runtime-mode"),
   schedulerSummary: document.querySelector("#scheduler-summary"),
-  openProjectRoot: document.querySelector("#open-project-root"),
-  openDataDir: document.querySelector("#open-data-dir"),
+  openOutputDir: document.querySelector("#open-output-dir"),
   openLogDir: document.querySelector("#open-log-dir"),
+  openHistoryDir: document.querySelector("#open-history-dir"),
+  historySearch: document.querySelector("#history-search"),
+  historyStatusFilter: document.querySelector("#history-status-filter"),
+  clearStatusLog: document.querySelector("#clear-status-log"),
+  runState: document.querySelector("#run-state"),
+  historyOverview: document.querySelector("#history-overview"),
   historyList: document.querySelector("#history-list"),
   statusLog: document.querySelector("#status-log")
 };
 
 let latestDiagnostics = null;
 let promptTemplates = [];
+let activeRuns = 0;
+let historyItemsCache = [];
 
 boot();
 
@@ -52,6 +58,9 @@ async function boot() {
 }
 
 function bindEvents() {
+  elements.navLinks.forEach((button) => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.tab || "compose"));
+  });
   document.querySelector("#save-config").addEventListener("click", saveConfig);
   document.querySelector("#run-manual").addEventListener("click", runManual);
   document.querySelector("#run-batch").addEventListener("click", runBatch);
@@ -62,26 +71,32 @@ function bindEvents() {
   elements.openTemplateModal.addEventListener("click", openPromptTemplateModal);
   elements.cancelTemplateModal.addEventListener("click", closePromptTemplateModal);
   elements.templateForm.addEventListener("submit", submitPromptTemplate);
-  elements.openProjectRoot.addEventListener("click", () => openDiagnosticPath("projectRoot"));
-  elements.openDataDir.addEventListener("click", () => openDiagnosticPath("dataDirectory"));
-  elements.openLogDir.addEventListener("click", () => openDiagnosticPath("logDirectory"));
+  elements.openOutputDir.addEventListener("click", () => openAppLocation("manualOutputDirectory", "保存位置"));
+  elements.openLogDir.addEventListener("click", () => openAppLocation("logDirectory", "日志目录"));
+  elements.openHistoryDir.addEventListener("click", () => openAppLocation("historyDirectory", "历史目录"));
+  elements.clearStatusLog.addEventListener("click", clearStatusLog);
+  elements.historySearch.addEventListener("input", renderHistoryList);
+  elements.historyStatusFilter.addEventListener("change", renderHistoryList);
 
   document.querySelectorAll("[data-pick]").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetId = button.dataset.pick;
       const kind = button.dataset.kind;
       const filter = button.dataset.filter;
+      const initialPath = document.querySelector(`#${targetId}`)?.value?.trim() || "";
       const result = kind === "file"
         ? await requestJson("/api/system/pick-file", {
             method: "POST",
-            body: JSON.stringify({ filter })
+            body: JSON.stringify({ filter, initialPath })
           })
         : await requestJson("/api/system/pick-folder", {
-            method: "POST"
+            method: "POST",
+            body: JSON.stringify({ initialPath })
           });
 
       if (result?.path) {
         document.querySelector(`#${targetId}`).value = result.path;
+        await saveConfig({ silent: true });
       }
     });
   });
@@ -91,10 +106,9 @@ async function hydrateConfig() {
   const config = await requestJson("/api/config");
   elements.apiKey.value = config.anygen.apiKey || "";
   elements.baseUrl.value = config.anygen.baseUrl || "";
-  elements.operation.value = config.anygen.operation === "doc" ? "chat" : (config.anygen.operation || "chat");
+  elements.operation.value = config.anygen.operation || "chat";
   elements.language.value = config.anygen.language || "zh-CN";
   elements.style.value = config.anygen.style || "";
-  elements.extraHeaders.value = config.anygen.extraHeaders || "";
   promptTemplates = normalizePromptTemplates(config.manual.promptTemplates);
   renderPromptTemplateOptions(config.manual.selectedPromptTemplateId);
   const manualPrompt = String(config.manual.prompt || "").trim();
@@ -111,13 +125,16 @@ async function hydrateConfig() {
   elements.schedulerTime.value = config.scheduler.time || "09:00";
   elements.schedulerTaskName.value = config.scheduler.taskName || "AnyGen Workbench Daily";
   renderManualTemplateState();
+  setActiveTab(readSavedTab());
 }
 
 async function saveConfig(options = {}) {
   const { silent = false } = options;
-  await requestJson("/api/config", {
-    method: "POST",
-    body: JSON.stringify(collectConfigPayload())
+  await withButtonBusy(document.querySelector("#save-config"), "保存中...", async () => {
+    await requestJson("/api/config", {
+      method: "POST",
+      body: JSON.stringify(collectConfigPayload())
+    });
   });
   await refreshDiagnostics();
   if (!silent) {
@@ -132,92 +149,115 @@ async function runManual() {
     return;
   }
 
-  await saveConfig();
+  await withRunState("手动任务运行中，正在等待 AnyGen 返回结果。", async () => {
+    await withButtonBusy(document.querySelector("#run-manual"), "运行中...", async () => {
+      await saveConfig();
 
-  const formData = new FormData();
-  formData.append("name", buildManualJobName(prompt));
-  formData.append("prompt", prompt);
-  formData.append("operation", elements.operation.value);
-  formData.append("outputDirectory", elements.manualOutput.value.trim());
-  formData.append("referenceDirectory", elements.manualReferenceDir.value.trim());
+      const formData = new FormData();
+      formData.append("name", buildManualJobName(prompt));
+      formData.append("prompt", prompt);
+      formData.append("operation", elements.operation.value);
+      formData.append("outputDirectory", elements.manualOutput.value.trim());
+      formData.append("referenceDirectory", elements.manualReferenceDir.value.trim());
 
-  Array.from(elements.manualFiles.files || []).forEach((file) => {
-    formData.append("referenceFiles", file);
+      Array.from(elements.manualFiles.files || []).forEach((file) => {
+        formData.append("referenceFiles", file);
+      });
+
+      log("手动任务已发出，正在等待 AnyGen 返回并落地到本地目录。");
+
+      try {
+        const result = await requestJson("/api/manual/run", {
+          method: "POST",
+          body: formData
+        }, false);
+
+        log(formatSummary("手动任务完成", result));
+        await refreshHistory();
+      } catch (error) {
+        throwAndLog(error.message);
+      }
+    });
   });
-
-  log("手动任务已发出，正在等待 AnyGen 返回并落地到本地目录。");
-
-  try {
-    const result = await requestJson("/api/manual/run", {
-      method: "POST",
-      body: formData
-    }, false);
-
-    log(formatSummary("手动任务完成", result));
-    await refreshHistory();
-  } catch (error) {
-    throwAndLog(error.message);
-  }
 }
 
 async function runBatch() {
-  await saveConfig();
-  log("批量任务开始执行，正在逐个目录或表格行处理。");
+  await withRunState("批量任务运行中，正在逐个目录或表格行处理。", async () => {
+    await withButtonBusy(document.querySelector("#run-batch"), "批量运行中...", async () => {
+      await saveConfig();
+      log("批量任务开始执行，正在逐个目录或表格行处理。");
 
-  try {
-    const result = await requestJson("/api/batch/run", {
-      method: "POST"
+      try {
+        const result = await requestJson("/api/batch/run", {
+          method: "POST"
+        });
+        log(formatSummary("批量任务完成", result));
+        await refreshHistory();
+        setActiveTab("history");
+      } catch (error) {
+        throwAndLog(error.message);
+      }
     });
-    log(formatSummary("批量任务完成", result));
-    await refreshHistory();
-  } catch (error) {
-    throwAndLog(error.message);
-  }
+  });
 }
 
 async function runScheduleNow() {
-  await saveConfig();
-  log("正在立即执行一次定时任务。");
+  await withRunState("定时任务正在立即执行这一轮。", async () => {
+    await withButtonBusy(document.querySelector("#run-schedule-now"), "执行中...", async () => {
+      await saveConfig();
+      log("正在立即执行一次定时任务。");
 
-  try {
-    const result = await requestJson("/api/scheduler/run-now", {
-      method: "POST"
+      try {
+        const result = await requestJson("/api/scheduler/run-now", {
+          method: "POST"
+        });
+        log(formatSummary("定时任务执行完成", result));
+        await refreshHistory();
+        setActiveTab("history");
+      } catch (error) {
+        throwAndLog(error.message);
+      }
     });
-    log(formatSummary("定时任务执行完成", result));
-    await refreshHistory();
-  } catch (error) {
-    throwAndLog(error.message);
-  }
+  });
 }
 
 async function registerSystemTask() {
-  await saveConfig();
+  await withButtonBusy(document.querySelector("#register-task"), "注册中...", async () => {
+    await saveConfig();
 
-  try {
-    const result = await requestJson("/api/system/register-task", {
-      method: "POST"
-    });
-    log(`Windows 计划任务已注册：${result.taskName}，每天 ${result.time} 运行。`);
-  } catch (error) {
-    throwAndLog(error.message);
-  }
+    try {
+      const result = await requestJson("/api/system/register-task", {
+        method: "POST"
+      });
+      log(`Windows 计划任务已注册：${result.taskName}，每天 ${result.time} 运行。${result.timezone ? ` 当前时区：${result.timezone}。` : ""}`);
+    } catch (error) {
+      throwAndLog(error.message);
+    }
+  });
 }
 
 async function refreshHistory() {
-  const items = await requestJson("/api/history");
+  historyItemsCache = await requestJson("/api/history");
+  renderHistoryOverview(historyItemsCache);
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const items = filterHistoryItems(historyItemsCache);
   elements.historyList.innerHTML = "";
 
   if (!items.length) {
+    const hasFilters = Boolean(elements.historySearch.value.trim()) || elements.historyStatusFilter.value !== "all";
     elements.historyList.innerHTML = `
       <div class="empty-state">
-        <strong>还没有任务记录</strong>
-        <p>先跑一次手动任务或批量任务，这里会显示每次任务的具体结果目录、文件数量和快捷入口。</p>
+        <strong>${hasFilters ? "没有匹配的记录" : "还没有任务记录"}</strong>
+        <p>${hasFilters ? "换一个关键词或状态试试。" : "先跑一次手动任务或批量任务，这里会显示每次任务的具体结果目录、文件数量和快捷入口。"}</p>
       </div>
     `;
     return;
   }
 
-  for (const item of items.slice(0, 20)) {
+  for (const item of items.slice(0, 30)) {
     elements.historyList.appendChild(renderHistoryItem(item));
   }
 }
@@ -228,22 +268,6 @@ async function refreshDiagnostics() {
 }
 
 function renderDiagnostics(diagnostics) {
-  const modeLabel = diagnostics?.runtime?.mode === "bundled" ? "便携运行时" : "系统 Node";
-  elements.runtimeBadge.textContent = modeLabel;
-  elements.runtimeBadge.className = `runtime-badge ${diagnostics?.runtime?.mode === "bundled" ? "is-bundled" : "is-system"}`;
-
-  const banner = diagnostics?.banner || {
-    tone: "info",
-    title: "正在等待环境检测",
-    body: "请稍等片刻。"
-  };
-
-  elements.setupBanner.className = `setup-banner tone-${banner.tone || "info"}`;
-  elements.setupBanner.innerHTML = `
-    <strong>${escapeHtml(banner.title || "环境检测")}</strong>
-    <p>${escapeHtml(banner.body || "")}</p>
-  `;
-
   const checklistItems = Array.isArray(diagnostics?.checklist) ? diagnostics.checklist : [];
   elements.setupChecklist.innerHTML = checklistItems.map((item) => `
     <article class="check-item ${item.ok ? "is-ok" : "is-pending"}">
@@ -255,25 +279,83 @@ function renderDiagnostics(diagnostics) {
     </article>
   `).join("");
 
-  elements.homeUrl.textContent = diagnostics?.app?.homeUrl || "-";
-  elements.runtimeMode.textContent = `${modeLabel} / Node ${diagnostics?.runtime?.nodeVersion || "-"}`;
+  elements.homeUrl.textContent = diagnostics?.paths?.manualOutputDirectory || "-";
+  elements.runtimeMode.textContent = diagnostics?.runtime?.mode === "bundled"
+    ? `内置便携版，可直接打开就用`
+    : `使用本机已安装环境`;
   elements.schedulerSummary.textContent = diagnostics?.config?.schedulerEnabled
     ? `已开启，每天 ${diagnostics.config.schedulerTime || "09:00"}`
     : "未开启";
 }
 
-async function openDiagnosticPath(key) {
-  const targetPath = latestDiagnostics?.paths?.[key];
-  if (!targetPath) {
-    throwAndLog("当前还没有检测到可打开的路径。");
+function renderHistoryOverview(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    elements.historyOverview.innerHTML = "";
     return;
   }
 
+  const completed = items.filter((item) => item.status === "completed").length;
+  const partial = items.filter((item) => item.status === "partial").length;
+  const failed = items.filter((item) => item.status === "failed").length;
+  const latestCreatedAt = items[0]?.createdAt
+    ? new Date(items[0].createdAt).toLocaleString("zh-CN", { hour12: false })
+    : "-";
+
+  elements.historyOverview.innerHTML = `
+    <div class="overview-card">
+      <span class="overview-label">最近记录</span>
+      <strong class="overview-value">${items.length}</strong>
+    </div>
+    <div class="overview-card">
+      <span class="overview-label">已完成</span>
+      <strong class="overview-value success">${completed}</strong>
+    </div>
+    <div class="overview-card">
+      <span class="overview-label">部分完成</span>
+      <strong class="overview-value warning">${partial}</strong>
+    </div>
+    <div class="overview-card">
+      <span class="overview-label">失败</span>
+      <strong class="overview-value danger">${failed}</strong>
+    </div>
+    <div class="overview-card is-wide">
+      <span class="overview-label">最近一次</span>
+      <strong class="overview-value">${escapeHtml(latestCreatedAt)}</strong>
+    </div>
+  `;
+}
+
+function filterHistoryItems(items) {
+  const query = elements.historySearch.value.trim().toLowerCase();
+  const status = elements.historyStatusFilter.value;
+
+  return items.filter((item) => {
+    if (status !== "all" && item.status !== status) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    const haystack = [
+      item.name,
+      item.outputDirectory,
+      item.error,
+      ...(Array.isArray(item.warnings) ? item.warnings : [])
+    ].join("\n").toLowerCase();
+
+    return haystack.includes(query);
+  });
+}
+
+async function openAppLocation(key, label) {
   try {
-    await requestJson("/api/system/open-path", {
+    const result = await requestJson("/api/system/open-location", {
       method: "POST",
-      body: JSON.stringify({ path: targetPath })
+      body: JSON.stringify({ key })
     });
+    log(`已打开${label}：${result.path}`);
   } catch (error) {
     throwAndLog(error.message);
   }
@@ -289,6 +371,15 @@ function renderHistoryItem(item) {
     : "-";
   const modeLabel = formatMode(item.mode);
   const statusLabel = formatStatus(item.status);
+  const warningSummary = Array.isArray(item.warnings) && item.warnings.length
+    ? `<div class="history-alert is-warning">${escapeHtml(item.warnings.join("；"))}</div>`
+    : "";
+  const errorSummary = item.error
+    ? `<div class="history-alert is-error">${escapeHtml(item.error)}</div>`
+    : "";
+  const taskUrlButton = item.taskUrl
+    ? '<button class="button ghost compact" type="button" data-action="open-task-url">打开任务页</button>'
+    : "";
 
   article.innerHTML = `
     <div class="history-compact">
@@ -302,7 +393,10 @@ function renderHistoryItem(item) {
       <div class="history-subline">
         <code class="path-pill compact-path-pill">${escapeHtml(item.outputDirectory || "-")}</code>
         ${item.outputDirectory ? '<button class="button ghost compact" type="button" data-action="open-dir">打开结果目录</button>' : ""}
+        ${taskUrlButton}
       </div>
+      ${errorSummary}
+      ${warningSummary}
     </div>
     ${renderFileList(item.files)}
   `;
@@ -318,7 +412,19 @@ function renderHistoryItem(item) {
     });
   };
 
+  const openTaskUrl = async () => {
+    if (!item.taskUrl) {
+      return;
+    }
+
+    await requestJson("/api/system/open-path", {
+      method: "POST",
+      body: JSON.stringify({ path: item.taskUrl })
+    });
+  };
+
   article.querySelector('[data-action="open-dir"]')?.addEventListener("click", openDirectory);
+  article.querySelector('[data-action="open-task-url"]')?.addEventListener("click", openTaskUrl);
 
   return article;
 }
@@ -354,8 +460,7 @@ function collectConfigPayload() {
       baseUrl: elements.baseUrl.value.trim(),
       operation: elements.operation.value,
       language: elements.language.value,
-      style: elements.style.value.trim(),
-      extraHeaders: elements.extraHeaders.value
+      style: elements.style.value.trim()
     },
     manual: {
       prompt: elements.manualPrompt.value,
@@ -388,7 +493,7 @@ function normalizePromptTemplates(templates) {
       name: String(template?.name || `提示词 ${index + 1}`),
       content: String(template?.content || "")
     }))
-    .filter((template) => template.content.trim())
+    .filter((template) => template.name.trim())
     : [];
 
   if (normalized.length > 0) {
@@ -396,8 +501,8 @@ function normalizePromptTemplates(templates) {
   }
 
   return [{
-    id: "default-manual-template",
-    name: "默认提示词",
+    id: "blank-start",
+    name: "空白开始",
     content: ""
   }];
 }
@@ -418,12 +523,17 @@ function renderManualTemplateState() {
   const template = getSelectedPromptTemplate();
   const placeholder = template?.content?.trim()
     ? template.content
-    : "选择一个模板后，会自动替换这里的内容。你也可以手动输入自己的提示词。";
+    : "直接写下你想让 AnyGen 完成的内容、风格和要求。";
 
   elements.manualPrompt.placeholder = placeholder;
-  elements.manualTemplateMeta.textContent = template
-    ? `当前已选：${template.name}。你切换模板时，下面的提示词会立刻跟着切换。`
-    : "先选一个提示词模板，下面的内容会自动跟着切换。";
+  if (!template) {
+    elements.manualTemplateMeta.textContent = "先选一个提示词模板，下面的内容会自动跟着切换。";
+    return;
+  }
+
+  elements.manualTemplateMeta.textContent = template.id === "blank-start"
+    ? "从空白开始，直接输入你的要求。"
+    : `当前已选：${template.name}。你切换模板时，下面的提示词会立刻跟着切换。`;
 }
 
 function getSelectedPromptTemplate() {
@@ -501,9 +611,10 @@ async function requestJson(url, options = {}, useJsonHeaders = true) {
     ...options,
     headers
   });
-  const json = await response.json();
+  const raw = await response.text();
+  const json = raw ? safeParseJson(raw) : null;
   if (!response.ok) {
-    throw new Error(json.error || "请求失败。");
+    throw new Error(json?.error || raw || "请求失败。");
   }
   return json;
 }
@@ -532,6 +643,18 @@ function formatSummary(title, payload) {
     lines.push(`本次处理：${payload.total} 个任务`);
   }
 
+  if (typeof payload?.completed === "number" || typeof payload?.partial === "number" || typeof payload?.failed === "number") {
+    lines.push(`完成 ${payload.completed || 0} / 部分完成 ${payload.partial || 0} / 失败 ${payload.failed || 0}`);
+  }
+
+  if (Array.isArray(payload?.warnings) && payload.warnings.length) {
+    lines.push(`提醒：${payload.warnings.join("；")}`);
+  }
+
+  if (payload?.error) {
+    lines.push(`错误：${payload.error}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -539,6 +662,7 @@ function formatMode(mode) {
   const labels = {
     manual: "手动任务",
     "manual-batch": "手动批量",
+    scheduled: "定时批量",
     "scheduled-batch": "定时批量"
   };
 
@@ -548,6 +672,7 @@ function formatMode(mode) {
 function formatStatus(status) {
   const labels = {
     completed: "已完成",
+    partial: "部分完成",
     failed: "失败",
     processing: "处理中"
   };
@@ -562,6 +687,81 @@ function buildManualJobName(prompt) {
 
 function throwAndLog(message) {
   log(`出错：${message}`);
+}
+
+function clearStatusLog() {
+  elements.statusLog.textContent = "日志已清空。";
+}
+
+async function withButtonBusy(button, busyLabel, callback) {
+  if (!button) {
+    return await callback();
+  }
+
+  const previousLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = busyLabel;
+  try {
+    return await callback();
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+  }
+}
+
+async function withRunState(message, callback) {
+  activeRuns += 1;
+  renderRunState(message);
+  try {
+    return await callback();
+  } finally {
+    activeRuns = Math.max(0, activeRuns - 1);
+    renderRunState(activeRuns > 0 ? "仍有任务在运行中。" : "当前空闲，可以直接发起任务。");
+  }
+}
+
+function renderRunState(message) {
+  if (!elements.runState) {
+    return;
+  }
+
+  elements.runState.textContent = message;
+  elements.runState.className = `run-state ${activeRuns > 0 ? "is-busy" : "is-idle"}`;
+}
+
+function setActiveTab(tabName) {
+  const fallbackTab = "compose";
+  const nextTab = elements.navLinks.some((button) => button.dataset.tab === tabName) ? tabName : fallbackTab;
+
+  elements.navLinks.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.tab === nextTab);
+  });
+
+  elements.viewPanels.forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.panel === nextTab);
+  });
+
+  try {
+    window.localStorage.setItem("anygen-active-tab", nextTab);
+  } catch {
+    // Ignore storage failures and keep the session usable.
+  }
+}
+
+function readSavedTab() {
+  try {
+    return window.localStorage.getItem("anygen-active-tab") || "compose";
+  } catch {
+    return "compose";
+  }
+}
+
+function safeParseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function escapeHtml(value) {

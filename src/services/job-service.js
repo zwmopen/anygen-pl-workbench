@@ -76,7 +76,7 @@ export class JobService {
           }
         }));
       } catch (error) {
-        results.push({
+        results.push(error.runEntry || {
           name: job.name,
           mode: runSource,
           status: "failed",
@@ -85,8 +85,15 @@ export class JobService {
       }
     }
 
+    const completed = results.filter((item) => item.status === "completed").length;
+    const partial = results.filter((item) => item.status === "partial").length;
+    const failed = results.filter((item) => item.status === "failed").length;
+
     return {
       total: limitedJobs.length,
+      completed,
+      partial,
+      failed,
       results
     };
   }
@@ -102,39 +109,76 @@ export class JobService {
     await ensureDir(runMetaDir);
     await ensureDir(actualOutputDirectory);
 
-    const extraHeaders = parseExtraHeaders(runRequest.options.extraHeaders);
-    const taskId = await this.anygenClient.createTask({
-      ...runRequest.options,
-      prompt: runRequest.prompt,
-      referenceFiles: runRequest.referenceFiles,
-      extraHeaders
-    });
+    let taskId = null;
+    try {
+      const extraHeaders = parseExtraHeaders(runRequest.options.extraHeaders);
+      taskId = await this.anygenClient.createTask({
+        ...runRequest.options,
+        prompt: runRequest.prompt,
+        referenceFiles: runRequest.referenceFiles,
+        extraHeaders
+      });
 
-    const task = await this.anygenClient.pollTask(taskId, {
-      ...runRequest.options,
-      extraHeaders
-    });
+      const task = await this.anygenClient.pollTask(taskId, {
+        ...runRequest.options,
+        extraHeaders
+      });
 
-    const saved = await this.persistTaskArtifacts(task, runMetaDir, actualOutputDirectory, runRequest.name);
+      const saved = await this.persistTaskArtifacts(task, runMetaDir, actualOutputDirectory, runRequest.name);
+      const finalStatus = deriveRunStatus(task.status, saved);
+      const entry = {
+        id: runId,
+        taskId,
+        name: runRequest.name,
+        mode: runRequest.mode,
+        status: finalStatus,
+        taskStatus: task.status,
+        prompt: runRequest.prompt,
+        createdAt: new Date().toISOString(),
+        outputDirectory: actualOutputDirectory,
+        taskUrl: saved.taskUrl,
+        files: saved.savedFiles,
+        warnings: saved.warnings,
+        artifactSummary: saved.artifactSummary
+      };
+      await this.configStore.appendHistory(entry);
 
-    const entry = {
-      id: runId,
-      taskId,
-      name: runRequest.name,
-      mode: runRequest.mode,
-      status: task.status,
-      prompt: runRequest.prompt,
-      createdAt: new Date().toISOString(),
-      outputDirectory: actualOutputDirectory,
-      taskUrl: saved.taskUrl,
-      files: saved.savedFiles
-    };
-    await this.configStore.appendHistory(entry);
+      return {
+        ...entry,
+        task
+      };
+    } catch (error) {
+      const failedEntry = {
+        id: runId,
+        taskId,
+        name: runRequest.name,
+        mode: runRequest.mode,
+        status: "failed",
+        prompt: runRequest.prompt,
+        createdAt: new Date().toISOString(),
+        outputDirectory: actualOutputDirectory,
+        taskUrl: "",
+        files: [],
+        warnings: [],
+        artifactSummary: {
+          savedFileCount: 0,
+          downloadedAttachmentCount: 0,
+          imageCount: 0,
+          warningCount: 0,
+          textSaved: false
+        },
+        error: error.message
+      };
 
-    return {
-      ...entry,
-      task
-    };
+      await writeJson(path.join(runMetaDir, "task-error.json"), {
+        error: error.message,
+        taskId,
+        occurredAt: failedEntry.createdAt
+      });
+      await this.configStore.appendHistory(failedEntry);
+      error.runEntry = failedEntry;
+      throw error;
+    }
   }
 
   resolveRunOutputDirectory(runRequest, runId) {
@@ -154,12 +198,17 @@ export class JobService {
     const output = task.output || {};
     const savedFiles = [];
     const taskUrl = output.task_url || "";
+    const warnings = [];
+    let downloadedAttachmentCount = 0;
+    let imageCount = 0;
+    let textSaved = false;
 
     const textContent = extractTextContent(task);
     if (textContent) {
       const markdownPath = path.join(outputDirectory, `${slugify(runName)}-result.md`);
       await writeText(markdownPath, textContent);
       savedFiles.push(markdownPath);
+      textSaved = true;
     }
 
     if (output.file_url) {
@@ -167,7 +216,9 @@ export class JobService {
       const targetPath = path.join(outputDirectory, filename);
       await downloadToFile(output.file_url, targetPath);
       savedFiles.push(targetPath);
-      savedFiles.push(...await expandDownloadedArtifacts(targetPath));
+      downloadedAttachmentCount += 1;
+      const expanded = await expandDownloadedArtifacts(targetPath);
+      savedFiles.push(...expanded);
     }
 
     const imageUrls = Array.from(collectImageUrls(task)).filter((url) => url !== output.file_url);
@@ -177,17 +228,23 @@ export class JobService {
       const targetPath = path.join(outputDirectory, `${slugify(runName)}-image-${String(index + 1).padStart(2, "0")}${extension}`);
       await downloadToFile(imageUrl, targetPath);
       savedFiles.push(targetPath);
+      imageCount += 1;
     }
 
     if (task.needs_export && output.task_url) {
-      const exportedFiles = await exportTaskAssetsFromBrowser({
+      const exportResult = await exportTaskAssetsFromBrowser({
         taskUrl: output.task_url,
         outputDirectory,
         baseName: slugify(runName) || "task"
       });
-      for (const exportedFile of exportedFiles) {
+      if (exportResult.warning) {
+        warnings.push(exportResult.warning);
+      }
+
+      for (const exportedFile of exportResult.savedFiles) {
         if (!savedFiles.includes(exportedFile)) {
           savedFiles.push(exportedFile);
+          downloadedAttachmentCount += 1;
         }
 
         const expandedFiles = await expandDownloadedArtifacts(exportedFile);
@@ -197,17 +254,33 @@ export class JobService {
           }
         }
       }
+    } else if (task.needs_export && !output.task_url) {
+      warnings.push("任务需要导出附件，但当前返回里没有可打开的任务页地址。");
+    }
+
+    if (savedFiles.length === 0) {
+      warnings.push("任务已完成，但没有检测到可落地的文本、附件或图片。");
     }
 
     const summaryPath = path.join(runMetaDir, "task-summary.json");
+    const artifactSummary = {
+      savedFileCount: savedFiles.length,
+      downloadedAttachmentCount,
+      imageCount,
+      warningCount: warnings.length,
+      textSaved
+    };
+
     await writeJson(summaryPath, {
       taskId: task.task_id || null,
       taskUrl,
       status: task.status,
-      output
+      output,
+      warnings,
+      artifactSummary
     });
 
-    return { savedFiles, taskUrl };
+    return { savedFiles, taskUrl, warnings, artifactSummary };
   }
 
   async buildJobsFromFolders(config) {
@@ -261,12 +334,17 @@ export class JobService {
       ? await readCsvRows(spreadsheetPath)
       : await readExcelRows(spreadsheetPath);
 
-    return await Promise.all(rows.map(async (row, index) => {
+    const jobs = await Promise.all(rows.map(async (row, index) => {
       const mapped = mapSpreadsheetRow(row);
       const referenceFiles = await this.loadReferenceFilesFromDirectory(mapped.referenceDirectory);
+      const prompt = (mapped.prompt || config.batch.fallbackPrompt || "").trim();
+      if (!prompt && referenceFiles.length === 0) {
+        return null;
+      }
+
       return {
         name: mapped.name || `row-${index + 1}`,
-        prompt: mapped.prompt || config.batch.fallbackPrompt,
+        prompt,
         referenceFiles,
         outputDirectory: mapped.outputDirectory || resolveOutputDirectory(config.batch, mapped.referenceDirectory || config.batch.sourceDirectory || this.historyDir),
         anygenOverrides: {
@@ -276,6 +354,8 @@ export class JobService {
         }
       };
     }));
+
+    return jobs.filter(Boolean);
   }
 
   async loadReferenceFilesFromDirectory(referenceDirectory) {
@@ -290,7 +370,10 @@ export class JobService {
 async function exportTaskAssetsFromBrowser({ taskUrl, outputDirectory, baseName }) {
   const scriptPath = path.join(process.cwd(), "scripts", "export-anygen-task-assets.ps1");
   if (!await fileExists(scriptPath)) {
-    return [];
+    return {
+      savedFiles: [],
+      warning: "本机没有导出脚本，已跳过自动导出附件。"
+    };
   }
 
   try {
@@ -313,9 +396,22 @@ async function exportTaskAssetsFromBrowser({ taskUrl, outputDirectory, baseName 
     });
 
     const parsed = parseLastJsonObject(stdout);
-    return Array.isArray(parsed?.savedFiles) ? parsed.savedFiles : [];
-  } catch {
-    return [];
+    if (!parsed) {
+      return {
+        savedFiles: [],
+        warning: "自动导出没有返回可识别结果，建议手动打开任务页检查。"
+      };
+    }
+
+    return {
+      savedFiles: Array.isArray(parsed.savedFiles) ? parsed.savedFiles : [],
+      warning: parsed.error ? `自动导出未完成：${parsed.error}` : ""
+    };
+  } catch (error) {
+    return {
+      savedFiles: [],
+      warning: `自动导出失败：${error.message}`
+    };
   }
 }
 
@@ -352,13 +448,13 @@ async function readExcelRows(spreadsheetPath) {
 
 async function readCsvRows(spreadsheetPath) {
   const raw = await fs.readFile(spreadsheetPath, "utf8");
-  const lines = raw.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length === 0) {
+  const records = parseCsvRecords(raw);
+  if (records.length === 0) {
     return [];
   }
-  const headers = parseCsvLine(lines[0]);
-  return lines.slice(1).map((line) => {
-    const columns = parseCsvLine(line);
+
+  const headers = records[0].map((cell) => String(cell || "").trim());
+  return records.slice(1).filter((record) => record.some((cell) => String(cell || "").trim())).map((columns) => {
     return headers.reduce((entry, header, index) => {
       entry[header] = columns[index] || "";
       return entry;
@@ -366,32 +462,54 @@ async function readCsvRows(spreadsheetPath) {
   });
 }
 
-function parseCsvLine(line) {
-  const values = [];
-  let current = "";
+function parseCsvRecords(raw) {
+  const rows = [];
+  let currentRow = [];
+  let currentCell = "";
   let inQuotes = false;
 
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
     if (char === '"') {
-      if (inQuotes && line[index + 1] === '"') {
-        current += '"';
+      if (inQuotes && raw[index + 1] === '"') {
+        currentCell += '"';
         index += 1;
       } else {
         inQuotes = !inQuotes;
       }
       continue;
     }
+
     if (char === "," && !inQuotes) {
-      values.push(current.trim());
-      current = "";
+      currentRow.push(normalizeCsvCell(currentCell));
+      currentCell = "";
       continue;
     }
-    current += char;
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && raw[index + 1] === "\n") {
+        index += 1;
+      }
+      currentRow.push(normalizeCsvCell(currentCell));
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = "";
+      continue;
+    }
+
+    currentCell += char;
   }
 
-  values.push(current.trim());
-  return values;
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(normalizeCsvCell(currentCell));
+    rows.push(currentRow);
+  }
+
+  return rows.filter((row) => row.length > 0);
+}
+
+function normalizeCsvCell(value) {
+  return String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 }
 
 function stringifyCellValue(value) {
@@ -680,4 +798,16 @@ function firstValue(entries, keys) {
     }
   }
   return "";
+}
+
+function deriveRunStatus(taskStatus, saved) {
+  if (taskStatus === "failed") {
+    return "failed";
+  }
+
+  if (saved.warnings.length > 0) {
+    return "partial";
+  }
+
+  return "completed";
 }

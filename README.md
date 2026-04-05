@@ -26,18 +26,25 @@ http://127.0.0.1:4318
 
 ## 发给朋友直接用
 
-如果你想把它打包后直接发给别人，推荐先生成便携版：
+如果你想把它打包后直接发给别人，现在有两种方式：
 
 ```bash
 npm run build-portable
+npm run build-installer
 ```
 
 打包完成后会生成：
 
 - `release/AnyGen-Workbench-Portable`
 - `release/AnyGen-Workbench-Portable-v1.0.0.zip`
+- `release/AnyGen-Workbench-Installer-v1.0.0.exe`
 
-便携版会自带：
+推荐这样理解：
+
+- `Portable.zip`：适合熟悉电脑的人，解压后直接双击运行
+- `Installer.exe`：适合普通用户，双击安装后桌面会生成快捷方式
+
+便携版 / 安装包都会自带：
 
 - 项目代码
 - 已安装的依赖
@@ -46,9 +53,17 @@ npm run build-portable
 
 朋友拿到后只需要：
 
-1. 完整解压压缩包
-2. 双击 `一键启动.bat` 或 `一键启动.vbs`
+1. 如果是 `Installer.exe`，双击安装
+2. 如果是 `Portable.zip`，完整解压后双击 `一键启动.bat` 或 `一键启动.vbs`
 3. 第一次打开后填入自己的 AnyGen API Key
+
+## GitHub 发布
+
+仓库已经适合直接走 GitHub 发布流程：
+
+- 平时开发改动可以走分支和 PR
+- 需要给别人下载时，可以把 `release/` 里的 zip / exe 上传到 GitHub Release
+- 后续也可以接 GitHub Actions，在打 tag 时自动生成发布包
 
 ## 文件夹批量规则
 

@@ -341,35 +341,46 @@ function Close-Window {
   }
 }
 
-$browserPath = Get-BrowserPath
-& $browserPath "--app=$TaskUrl" | Out-Null
+$window = $null
+$result = @{
+  savedFiles = @()
+  error = $null
+}
 
-$window = Wait-MainWindow -TimeoutSeconds $OpenWaitSeconds
-$shell = New-Object -ComObject WScript.Shell
-$shell.AppActivate($window.Id) | Out-Null
-Start-Sleep -Milliseconds 800
+try {
+  $browserPath = Get-BrowserPath
+  & $browserPath "--app=$TaskUrl" | Out-Null
 
-$root = Get-RootElement -Window $window
-$null = Wait-DocumentReady -Root $root -TimeoutSeconds $OpenWaitSeconds
-$downloadDirectory = Join-Path ([Environment]::GetFolderPath("UserProfile")) "Downloads"
-$attachments = Find-AttachmentEntries -Root $root
+  $window = Wait-MainWindow -TimeoutSeconds $OpenWaitSeconds
+  $shell = New-Object -ComObject WScript.Shell
+  $shell.AppActivate($window.Id) | Out-Null
+  Start-Sleep -Milliseconds 800
 
-if ($attachments.Count -gt 0) {
-  $preferredAttachments = @($attachments | Where-Object { $_.Name -match '\.zip$' })
-  if ($preferredAttachments.Count -eq 0) {
-    $preferredAttachments = $attachments
-  }
+  $root = Get-RootElement -Window $window
+  $null = Wait-DocumentReady -Root $root -TimeoutSeconds $OpenWaitSeconds
+  $downloadDirectory = Join-Path ([Environment]::GetFolderPath("UserProfile")) "Downloads"
+  $attachments = Find-AttachmentEntries -Root $root
 
-  foreach ($entry in $preferredAttachments) {
-    $downloaded = Download-Attachment -Root $root -DownloadDirectory $downloadDirectory -Entry $entry
-    if ($downloaded -and $entry.Name -match '\.zip$') {
-      break
+  if ($attachments.Count -gt 0) {
+    $preferredAttachments = @($attachments | Where-Object { $_.Name -match '\.zip$' })
+    if ($preferredAttachments.Count -eq 0) {
+      $preferredAttachments = $attachments
     }
+
+    foreach ($entry in $preferredAttachments) {
+      $downloaded = Download-Attachment -Root $root -DownloadDirectory $downloadDirectory -Entry $entry
+      if ($downloaded -and $entry.Name -match '\.zip$') {
+        break
+      }
+    }
+  }
+} catch {
+  $result.error = $_.Exception.Message
+} finally {
+  if ($window) {
+    Close-Window -Window $window
   }
 }
 
-Close-Window -Window $window
-
-@{
-  savedFiles = $SavedFiles
-} | ConvertTo-Json -Depth 4
+$result.savedFiles = @($SavedFiles)
+$result | ConvertTo-Json -Depth 4

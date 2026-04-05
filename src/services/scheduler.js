@@ -3,12 +3,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const systemTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 
 export class SchedulerService {
   constructor({ configStore, jobService, projectRoot }) {
     this.configStore = configStore;
     this.jobService = jobService;
     this.projectRoot = projectRoot;
+    this.timezone = systemTimeZone;
     this.task = null;
     this.running = false;
   }
@@ -30,7 +32,7 @@ export class SchedulerService {
     this.task = cron.schedule(expression, async () => {
       await this.runScheduledBatch();
     }, {
-      timezone: "Asia/Shanghai"
+      timezone: this.timezone
     });
   }
 
@@ -50,7 +52,10 @@ export class SchedulerService {
   async registerWindowsTask(config) {
     const time = config.scheduler.time || "09:00";
     const taskName = config.scheduler.taskName || "AnyGen Workbench Daily";
-    const command = `cmd /c cd /d "${this.projectRoot}" && "${process.execPath}" server.js --run-scheduled`;
+    const isElectronRuntime = Boolean(process.versions.electron) && !process.defaultApp;
+    const command = isElectronRuntime
+      ? `"${process.execPath}" --run-scheduled`
+      : `cmd /c cd /d "${this.projectRoot}" && "${process.execPath}" server.js --run-scheduled`;
 
     await execFileAsync("schtasks.exe", [
       "/Create",
@@ -65,7 +70,7 @@ export class SchedulerService {
       "/F"
     ]);
 
-    return { taskName, time };
+    return { taskName, time, timezone: this.timezone };
   }
 
   async unregisterWindowsTask(taskName) {

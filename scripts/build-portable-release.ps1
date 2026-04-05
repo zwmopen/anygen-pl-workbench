@@ -9,6 +9,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $OutputRoot) {
   $OutputRoot = Join-Path $ProjectRoot "release"
 }
+$downloadDir = $null
 
 function Write-Step {
   param(
@@ -105,6 +106,7 @@ if (Test-Path $stageDir) {
 New-Item -ItemType Directory -Force $stageDir | Out-Null
 
 $pathsToCopy = @(
+  "assets",
   "public",
   "scripts",
   "src",

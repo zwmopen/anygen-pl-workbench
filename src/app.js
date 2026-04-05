@@ -68,9 +68,9 @@ export async function createServerApp() {
     }
   });
 
-  app.post("/api/system/pick-folder", async (_request, response, next) => {
+  app.post("/api/system/pick-folder", async (request, response, next) => {
     try {
-      const selectedPath = await openFolderDialog("选择文件夹");
+      const selectedPath = await openFolderDialog("选择文件夹", request.body?.initialPath || "");
       response.json({ path: selectedPath || "" });
     } catch (error) {
       next(error);
@@ -79,7 +79,10 @@ export async function createServerApp() {
 
   app.post("/api/system/pick-file", async (request, response, next) => {
     try {
-      const selectedPath = await openFileDialog(request.body?.filter || "所有文件|*.*");
+      const selectedPath = await openFileDialog(
+        request.body?.filter || "所有文件|*.*",
+        request.body?.initialPath || ""
+      );
       response.json({ path: selectedPath || "" });
     } catch (error) {
       next(error);
@@ -94,6 +97,20 @@ export async function createServerApp() {
       }
       await openLocalPath(targetPath);
       response.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/system/open-location", async (request, response, next) => {
+    try {
+      const key = String(request.body?.key || "").trim();
+      const targetPath = await resolveAppLocation(configStore, key);
+      if (!targetPath) {
+        throw new Error("没有可打开的位置。");
+      }
+      await openLocalPath(targetPath);
+      response.json({ ok: true, path: targetPath });
     } catch (error) {
       next(error);
     }
@@ -178,12 +195,16 @@ export async function runScheduledOnce() {
   return await scheduler.runScheduledBatch();
 }
 
-async function openFolderDialog(description) {
+async function openFolderDialog(description, initialPath = "") {
   const script = `
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
     $dialog.Description = '${escapePowerShell(description)}'
     $dialog.ShowNewFolderButton = $true
+    $initialPath = '${escapePowerShell(initialPath)}'
+    if ($initialPath -and (Test-Path $initialPath)) {
+      $dialog.SelectedPath = $initialPath
+    }
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       Write-Output $dialog.SelectedPath
     }
@@ -197,11 +218,20 @@ async function openFolderDialog(description) {
   return stdout.trim();
 }
 
-async function openFileDialog(filter) {
+async function openFileDialog(filter, initialPath = "") {
   const script = `
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object System.Windows.Forms.OpenFileDialog
     $dialog.Filter = '${escapePowerShell(filter)}'
+    $initialPath = '${escapePowerShell(initialPath)}'
+    if ($initialPath) {
+      if (Test-Path $initialPath -PathType Container) {
+        $dialog.InitialDirectory = $initialPath
+      } elseif (Test-Path $initialPath) {
+        $dialog.InitialDirectory = Split-Path -Path $initialPath -Parent
+        $dialog.FileName = Split-Path -Path $initialPath -Leaf
+      }
+    }
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       Write-Output $dialog.FileName
     }
@@ -216,8 +246,16 @@ async function openFileDialog(filter) {
 }
 
 async function openLocalPath(targetPath) {
+  if (isExternalTarget(targetPath)) {
+    await execFileAsync("cmd.exe", ["/c", "start", "", targetPath], {
+      cwd: projectRoot,
+      windowsHide: true
+    });
+    return;
+  }
+
   const normalized = path.resolve(targetPath);
-  await execFileAsync("cmd.exe", ["/c", "start", "", normalized], {
+  await execFileAsync("explorer.exe", [normalized], {
     cwd: projectRoot,
     windowsHide: true
   });
@@ -225,6 +263,33 @@ async function openLocalPath(targetPath) {
 
 function escapePowerShell(value) {
   return String(value || "").replace(/'/g, "''");
+}
+
+function isExternalTarget(value) {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(String(value || "").trim());
+}
+
+async function resolveAppLocation(configStore, key) {
+  const config = await configStore.getConfig();
+  const locations = {
+    projectRoot,
+    dataDirectory: configStore.dataDir,
+    historyDirectory: path.join(configStore.dataDir, "history"),
+    logDirectory: path.join(configStore.dataDir, "runtime"),
+    manualOutputDirectory: config.manual.outputDirectory || "",
+    batchSourceDirectory: config.batch.sourceDirectory || ""
+  };
+
+  const targetPath = locations[key];
+  if (!targetPath) {
+    return "";
+  }
+
+  if (["dataDirectory", "historyDirectory", "logDirectory", "manualOutputDirectory"].includes(key)) {
+    await fs.mkdir(targetPath, { recursive: true });
+  }
+
+  return targetPath;
 }
 
 async function buildDiagnostics(configStore) {
@@ -251,7 +316,7 @@ async function buildDiagnostics(configStore) {
       key: "runtime",
       label: "运行环境",
       ok: true,
-      detail: usingBundledRuntime ? "正在使用内置便携运行时" : "正在使用系统里的 Node.js"
+      detail: usingBundledRuntime ? "正在使用内置便携环境" : "正在使用这台电脑已经安装好的运行环境"
     },
     {
       key: "manual-output",
@@ -304,8 +369,8 @@ function buildBannerMessage(config, checklist) {
   if (!config.anygen.apiKey?.trim()) {
     return {
       tone: "warning",
-      title: "还差一步就能开跑",
-      body: "先填好 AnyGen API Key 并保存配置，朋友第一次打开时也只需要做这一步。"
+      title: "先填 API Key",
+      body: "保存后就能开始使用。"
     };
   }
 
@@ -313,15 +378,15 @@ function buildBannerMessage(config, checklist) {
   if (missingDirectories.length > 0) {
     return {
       tone: "info",
-      title: "环境已经就绪",
-      body: "现在已经能正常使用。想让新用户更顺手的话，建议再预设一个结果目录或批量源目录。"
+      title: "已就绪",
+      body: "可以直接开始使用。"
     };
   }
 
   return {
     tone: "success",
-    title: "现在可以直接交给别人用了",
-    body: "运行环境、基础配置和目录都已经齐了，双击启动后就能直接进入界面。"
+    title: "已就绪",
+    body: "可以直接开始使用。"
   };
 }
 

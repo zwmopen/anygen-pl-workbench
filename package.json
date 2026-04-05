@@ -1,14 +1,19 @@
 {
   "name": "anygen-pl-workbench",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Local AnyGen workbench for manual, batch, and scheduled generation tasks.",
+  "author": "zwmopen",
   "type": "module",
+  "main": "desktop/main.mjs",
   "scripts": {
+    "desktop": "electron .",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "run-scheduled": "node server.js --run-scheduled",
     "smoke-test": "node scripts/smoke-test.mjs",
-    "build-portable": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-portable-release.ps1"
+    "build-client": "electron-builder --win nsis portable",
+    "build-portable": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-portable-release.ps1",
+    "build-installer": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-installer-release.ps1"
   },
   "engines": {
     "node": ">=20"
@@ -20,5 +25,43 @@
     "mammoth": "^1.8.0",
     "multer": "^2.0.2",
     "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.anygen.workbench",
+    "productName": "AnyGen Workbench",
+    "asar": false,
+    "directories": {
+      "output": "release-client"
+    },
+    "files": [
+      "assets/**/*",
+      "desktop/**/*",
+      "public/**/*",
+      "scripts/**/*",
+      "src/**/*",
+      "server.js",
+      "README.md",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/AnyGen-Workbench.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "AnyGen-Workbench-Installer-v${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "AnyGen-Workbench-Portable-v${version}.${ext}"
+    }
   }
 }

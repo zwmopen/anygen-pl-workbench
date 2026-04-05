@@ -23,13 +23,15 @@ $startShortcut = Join-Path $startMenuDir "AnyGen Workbench.lnk"
 $dataShortcut = Join-Path $startMenuDir "Open Data Folder.lnk"
 $targetScript = Join-Path $InstallRoot "Start-AnyGen.vbs"
 $dataDirectory = Join-Path $InstallRoot "data"
+$iconPath = Join-Path $InstallRoot "assets\AnyGen-Workbench.ico"
 
 function New-Shortcut {
   param(
     [string]$ShortcutPath,
     [string]$TargetPath,
     [string]$Arguments = "",
-    [string]$WorkingDirectory = ""
+    [string]$WorkingDirectory = "",
+    [string]$IconLocation = ""
   )
 
   $shell = New-Object -ComObject WScript.Shell
@@ -40,6 +42,9 @@ function New-Shortcut {
   }
   if ($WorkingDirectory) {
     $shortcut.WorkingDirectory = $WorkingDirectory
+  }
+  if ($IconLocation) {
+    $shortcut.IconLocation = $IconLocation
   }
   $shortcut.Save()
 }
@@ -62,9 +67,9 @@ try {
   }
 
   New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
-  New-Shortcut -ShortcutPath $desktopShortcut -TargetPath $targetScript -WorkingDirectory $InstallRoot
-  New-Shortcut -ShortcutPath $startShortcut -TargetPath $targetScript -WorkingDirectory $InstallRoot
-  New-Shortcut -ShortcutPath $dataShortcut -TargetPath "explorer.exe" -Arguments ('"{0}"' -f $dataDirectory) -WorkingDirectory $InstallRoot
+  New-Shortcut -ShortcutPath $desktopShortcut -TargetPath $targetScript -WorkingDirectory $InstallRoot -IconLocation $iconPath
+  New-Shortcut -ShortcutPath $startShortcut -TargetPath $targetScript -WorkingDirectory $InstallRoot -IconLocation $iconPath
+  New-Shortcut -ShortcutPath $dataShortcut -TargetPath "explorer.exe" -Arguments ('"{0}"' -f $dataDirectory) -WorkingDirectory $InstallRoot -IconLocation $iconPath
 
   if (-not $NoLaunch) {
     Start-Process -FilePath $targetScript -WorkingDirectory $InstallRoot

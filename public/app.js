@@ -1,10 +1,11 @@
 const elements = {
+  navLinks: Array.from(document.querySelectorAll("[data-tab]")),
+  viewPanels: Array.from(document.querySelectorAll("[data-panel]")),
   apiKey: document.querySelector("#api-key"),
   baseUrl: document.querySelector("#base-url"),
   operation: document.querySelector("#operation"),
   language: document.querySelector("#language"),
   style: document.querySelector("#style"),
-  extraHeaders: document.querySelector("#extra-headers"),
   manualTemplateSelect: document.querySelector("#manual-template-select"),
   manualTemplateMeta: document.querySelector("#manual-template-meta"),
   openTemplateModal: document.querySelector("#open-template-modal"),
@@ -26,16 +27,15 @@ const elements = {
   schedulerEnabled: document.querySelector("#scheduler-enabled"),
   schedulerTime: document.querySelector("#scheduler-time"),
   schedulerTaskName: document.querySelector("#scheduler-task-name"),
-  runtimeBadge: document.querySelector("#runtime-badge"),
-  setupBanner: document.querySelector("#setup-banner"),
   setupChecklist: document.querySelector("#setup-checklist"),
   homeUrl: document.querySelector("#home-url"),
   runtimeMode: document.querySelector("#runtime-mode"),
   schedulerSummary: document.querySelector("#scheduler-summary"),
-  openProjectRoot: document.querySelector("#open-project-root"),
-  openDataDir: document.querySelector("#open-data-dir"),
+  openOutputDir: document.querySelector("#open-output-dir"),
   openLogDir: document.querySelector("#open-log-dir"),
   openHistoryDir: document.querySelector("#open-history-dir"),
+  historySearch: document.querySelector("#history-search"),
+  historyStatusFilter: document.querySelector("#history-status-filter"),
   clearStatusLog: document.querySelector("#clear-status-log"),
   runState: document.querySelector("#run-state"),
   historyOverview: document.querySelector("#history-overview"),
@@ -46,6 +46,7 @@ const elements = {
 let latestDiagnostics = null;
 let promptTemplates = [];
 let activeRuns = 0;
+let historyItemsCache = [];
 
 boot();
 
@@ -57,6 +58,9 @@ async function boot() {
 }
 
 function bindEvents() {
+  elements.navLinks.forEach((button) => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.tab || "compose"));
+  });
   document.querySelector("#save-config").addEventListener("click", saveConfig);
   document.querySelector("#run-manual").addEventListener("click", runManual);
   document.querySelector("#run-batch").addEventListener("click", runBatch);
@@ -67,28 +71,32 @@ function bindEvents() {
   elements.openTemplateModal.addEventListener("click", openPromptTemplateModal);
   elements.cancelTemplateModal.addEventListener("click", closePromptTemplateModal);
   elements.templateForm.addEventListener("submit", submitPromptTemplate);
-  elements.openProjectRoot.addEventListener("click", () => openDiagnosticPath("projectRoot"));
-  elements.openDataDir.addEventListener("click", () => openDiagnosticPath("dataDirectory"));
-  elements.openLogDir.addEventListener("click", () => openDiagnosticPath("logDirectory"));
-  elements.openHistoryDir.addEventListener("click", () => openDiagnosticPath("historyDirectory"));
+  elements.openOutputDir.addEventListener("click", () => openAppLocation("manualOutputDirectory", "保存位置"));
+  elements.openLogDir.addEventListener("click", () => openAppLocation("logDirectory", "日志目录"));
+  elements.openHistoryDir.addEventListener("click", () => openAppLocation("historyDirectory", "历史目录"));
   elements.clearStatusLog.addEventListener("click", clearStatusLog);
+  elements.historySearch.addEventListener("input", renderHistoryList);
+  elements.historyStatusFilter.addEventListener("change", renderHistoryList);
 
   document.querySelectorAll("[data-pick]").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetId = button.dataset.pick;
       const kind = button.dataset.kind;
       const filter = button.dataset.filter;
+      const initialPath = document.querySelector(`#${targetId}`)?.value?.trim() || "";
       const result = kind === "file"
         ? await requestJson("/api/system/pick-file", {
             method: "POST",
-            body: JSON.stringify({ filter })
+            body: JSON.stringify({ filter, initialPath })
           })
         : await requestJson("/api/system/pick-folder", {
-            method: "POST"
+            method: "POST",
+            body: JSON.stringify({ initialPath })
           });
 
       if (result?.path) {
         document.querySelector(`#${targetId}`).value = result.path;
+        await saveConfig({ silent: true });
       }
     });
   });
@@ -98,12 +106,9 @@ async function hydrateConfig() {
   const config = await requestJson("/api/config");
   elements.apiKey.value = config.anygen.apiKey || "";
   elements.baseUrl.value = config.anygen.baseUrl || "";
-  elements.operation.value = config.anygen.operation === "doc" ? "chat" : (config.anygen.operation || "chat");
+  elements.operation.value = config.anygen.operation || "chat";
   elements.language.value = config.anygen.language || "zh-CN";
   elements.style.value = config.anygen.style || "";
-  if (elements.extraHeaders) {
-    elements.extraHeaders.value = config.anygen.extraHeaders || "";
-  }
   promptTemplates = normalizePromptTemplates(config.manual.promptTemplates);
   renderPromptTemplateOptions(config.manual.selectedPromptTemplateId);
   const manualPrompt = String(config.manual.prompt || "").trim();
@@ -120,6 +125,7 @@ async function hydrateConfig() {
   elements.schedulerTime.value = config.scheduler.time || "09:00";
   elements.schedulerTaskName.value = config.scheduler.taskName || "AnyGen Workbench Daily";
   renderManualTemplateState();
+  setActiveTab(readSavedTab());
 }
 
 async function saveConfig(options = {}) {
@@ -187,6 +193,7 @@ async function runBatch() {
         });
         log(formatSummary("批量任务完成", result));
         await refreshHistory();
+        setActiveTab("history");
       } catch (error) {
         throwAndLog(error.message);
       }
@@ -206,6 +213,7 @@ async function runScheduleNow() {
         });
         log(formatSummary("定时任务执行完成", result));
         await refreshHistory();
+        setActiveTab("history");
       } catch (error) {
         throwAndLog(error.message);
       }
@@ -229,21 +237,27 @@ async function registerSystemTask() {
 }
 
 async function refreshHistory() {
-  const items = await requestJson("/api/history");
-  renderHistoryOverview(items);
+  historyItemsCache = await requestJson("/api/history");
+  renderHistoryOverview(historyItemsCache);
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const items = filterHistoryItems(historyItemsCache);
   elements.historyList.innerHTML = "";
 
   if (!items.length) {
+    const hasFilters = Boolean(elements.historySearch.value.trim()) || elements.historyStatusFilter.value !== "all";
     elements.historyList.innerHTML = `
       <div class="empty-state">
-        <strong>还没有任务记录</strong>
-        <p>先跑一次手动任务或批量任务，这里会显示每次任务的具体结果目录、文件数量和快捷入口。</p>
+        <strong>${hasFilters ? "没有匹配的记录" : "还没有任务记录"}</strong>
+        <p>${hasFilters ? "换一个关键词或状态试试。" : "先跑一次手动任务或批量任务，这里会显示每次任务的具体结果目录、文件数量和快捷入口。"}</p>
       </div>
     `;
     return;
   }
 
-  for (const item of items.slice(0, 20)) {
+  for (const item of items.slice(0, 30)) {
     elements.historyList.appendChild(renderHistoryItem(item));
   }
 }
@@ -254,22 +268,6 @@ async function refreshDiagnostics() {
 }
 
 function renderDiagnostics(diagnostics) {
-  const modeLabel = diagnostics?.runtime?.mode === "bundled" ? "便携运行时" : "系统 Node";
-  elements.runtimeBadge.textContent = modeLabel;
-  elements.runtimeBadge.className = `runtime-badge ${diagnostics?.runtime?.mode === "bundled" ? "is-bundled" : "is-system"}`;
-
-  const banner = diagnostics?.banner || {
-    tone: "info",
-    title: "正在等待环境检测",
-    body: "请稍等片刻。"
-  };
-
-  elements.setupBanner.className = `setup-banner tone-${banner.tone || "info"}`;
-  elements.setupBanner.innerHTML = `
-    <strong>${escapeHtml(banner.title || "环境检测")}</strong>
-    <p>${escapeHtml(banner.body || "")}</p>
-  `;
-
   const checklistItems = Array.isArray(diagnostics?.checklist) ? diagnostics.checklist : [];
   elements.setupChecklist.innerHTML = checklistItems.map((item) => `
     <article class="check-item ${item.ok ? "is-ok" : "is-pending"}">
@@ -281,8 +279,10 @@ function renderDiagnostics(diagnostics) {
     </article>
   `).join("");
 
-  elements.homeUrl.textContent = diagnostics?.app?.homeUrl || "-";
-  elements.runtimeMode.textContent = `${modeLabel} / Node ${diagnostics?.runtime?.nodeVersion || "-"}`;
+  elements.homeUrl.textContent = diagnostics?.paths?.manualOutputDirectory || "-";
+  elements.runtimeMode.textContent = diagnostics?.runtime?.mode === "bundled"
+    ? `内置便携版，可直接打开就用`
+    : `使用本机已安装环境`;
   elements.schedulerSummary.textContent = diagnostics?.config?.schedulerEnabled
     ? `已开启，每天 ${diagnostics.config.schedulerTime || "09:00"}`
     : "未开启";
@@ -325,18 +325,37 @@ function renderHistoryOverview(items) {
   `;
 }
 
-async function openDiagnosticPath(key) {
-  const targetPath = latestDiagnostics?.paths?.[key];
-  if (!targetPath) {
-    throwAndLog("当前还没有检测到可打开的路径。");
-    return;
-  }
+function filterHistoryItems(items) {
+  const query = elements.historySearch.value.trim().toLowerCase();
+  const status = elements.historyStatusFilter.value;
 
+  return items.filter((item) => {
+    if (status !== "all" && item.status !== status) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    const haystack = [
+      item.name,
+      item.outputDirectory,
+      item.error,
+      ...(Array.isArray(item.warnings) ? item.warnings : [])
+    ].join("\n").toLowerCase();
+
+    return haystack.includes(query);
+  });
+}
+
+async function openAppLocation(key, label) {
   try {
-    await requestJson("/api/system/open-path", {
+    const result = await requestJson("/api/system/open-location", {
       method: "POST",
-      body: JSON.stringify({ path: targetPath })
+      body: JSON.stringify({ key })
     });
+    log(`已打开${label}：${result.path}`);
   } catch (error) {
     throwAndLog(error.message);
   }
@@ -441,8 +460,7 @@ function collectConfigPayload() {
       baseUrl: elements.baseUrl.value.trim(),
       operation: elements.operation.value,
       language: elements.language.value,
-      style: elements.style.value.trim(),
-      extraHeaders: elements.extraHeaders?.value || ""
+      style: elements.style.value.trim()
     },
     manual: {
       prompt: elements.manualPrompt.value,
@@ -475,7 +493,7 @@ function normalizePromptTemplates(templates) {
       name: String(template?.name || `提示词 ${index + 1}`),
       content: String(template?.content || "")
     }))
-    .filter((template) => template.content.trim())
+    .filter((template) => template.name.trim())
     : [];
 
   if (normalized.length > 0) {
@@ -483,8 +501,8 @@ function normalizePromptTemplates(templates) {
   }
 
   return [{
-    id: "default-manual-template",
-    name: "默认提示词",
+    id: "blank-start",
+    name: "空白开始",
     content: ""
   }];
 }
@@ -505,12 +523,17 @@ function renderManualTemplateState() {
   const template = getSelectedPromptTemplate();
   const placeholder = template?.content?.trim()
     ? template.content
-    : "选择一个模板后，会自动替换这里的内容。你也可以手动输入自己的提示词。";
+    : "直接写下你想让 AnyGen 完成的内容、风格和要求。";
 
   elements.manualPrompt.placeholder = placeholder;
-  elements.manualTemplateMeta.textContent = template
-    ? `当前已选：${template.name}。你切换模板时，下面的提示词会立刻跟着切换。`
-    : "先选一个提示词模板，下面的内容会自动跟着切换。";
+  if (!template) {
+    elements.manualTemplateMeta.textContent = "先选一个提示词模板，下面的内容会自动跟着切换。";
+    return;
+  }
+
+  elements.manualTemplateMeta.textContent = template.id === "blank-start"
+    ? "从空白开始，直接输入你的要求。"
+    : `当前已选：${template.name}。你切换模板时，下面的提示词会立刻跟着切换。`;
 }
 
 function getSelectedPromptTemplate() {
@@ -704,6 +727,33 @@ function renderRunState(message) {
 
   elements.runState.textContent = message;
   elements.runState.className = `run-state ${activeRuns > 0 ? "is-busy" : "is-idle"}`;
+}
+
+function setActiveTab(tabName) {
+  const fallbackTab = "compose";
+  const nextTab = elements.navLinks.some((button) => button.dataset.tab === tabName) ? tabName : fallbackTab;
+
+  elements.navLinks.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.tab === nextTab);
+  });
+
+  elements.viewPanels.forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.panel === nextTab);
+  });
+
+  try {
+    window.localStorage.setItem("anygen-active-tab", nextTab);
+  } catch {
+    // Ignore storage failures and keep the session usable.
+  }
+}
+
+function readSavedTab() {
+  try {
+    return window.localStorage.getItem("anygen-active-tab") || "compose";
+  } catch {
+    return "compose";
+  }
 }
 
 function safeParseJson(value) {

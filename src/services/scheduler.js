@@ -52,7 +52,10 @@ export class SchedulerService {
   async registerWindowsTask(config) {
     const time = config.scheduler.time || "09:00";
     const taskName = config.scheduler.taskName || "AnyGen Workbench Daily";
-    const command = `cmd /c cd /d "${this.projectRoot}" && "${process.execPath}" server.js --run-scheduled`;
+    const isElectronRuntime = Boolean(process.versions.electron) && !process.defaultApp;
+    const command = isElectronRuntime
+      ? `"${process.execPath}" --run-scheduled`
+      : `cmd /c cd /d "${this.projectRoot}" && "${process.execPath}" server.js --run-scheduled`;
 
     await execFileAsync("schtasks.exe", [
       "/Create",

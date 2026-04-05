@@ -106,6 +106,7 @@ if (Test-Path $stageDir) {
 New-Item -ItemType Directory -Force $stageDir | Out-Null
 
 $pathsToCopy = @(
+  "assets",
   "public",
   "scripts",
   "src",

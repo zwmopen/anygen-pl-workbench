@@ -368,7 +368,7 @@ export class JobService {
 }
 
 async function exportTaskAssetsFromBrowser({ taskUrl, outputDirectory, baseName }) {
-  const scriptPath = path.join(process.cwd(), "scripts", "export-anygen-task-assets.ps1");
+  const scriptPath = await resolveBundledScriptPath("export-anygen-task-assets.ps1");
   if (!await fileExists(scriptPath)) {
     return {
       savedFiles: [],
@@ -413,6 +413,22 @@ async function exportTaskAssetsFromBrowser({ taskUrl, outputDirectory, baseName 
       warning: `自动导出失败：${error.message}`
     };
   }
+}
+
+async function resolveBundledScriptPath(fileName) {
+  const candidates = [
+    path.join(process.cwd(), "scripts", fileName),
+    path.join(process.resourcesPath || "", "app.asar.unpacked", "scripts", fileName),
+    path.join(process.resourcesPath || "", "scripts", fileName)
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0] || path.join(process.cwd(), "scripts", fileName);
 }
 
 async function readExcelRows(spreadsheetPath) {

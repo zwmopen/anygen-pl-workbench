@@ -38,7 +38,15 @@
   "build": {
     "appId": "com.anygen.workbench",
     "productName": "AnyGen Workbench",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "scripts/export-anygen-task-assets.ps1"
+    ],
+    "compression": "maximum",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "directories": {
       "output": "release-client"
     },
@@ -46,11 +54,10 @@
       "assets/**/*",
       "desktop/**/*",
       "public/**/*",
-      "scripts/**/*",
       "src/**/*",
       "server.js",
-      "README.md",
-      "package.json"
+      "package.json",
+      "scripts/export-anygen-task-assets.ps1"
     ],
     "win": {
       "icon": "assets/AnyGen-Workbench.ico",

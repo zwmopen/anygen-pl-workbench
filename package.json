@@ -3,6 +3,11 @@
   "version": "1.1.1",
   "description": "Local AnyGen workbench for manual, batch, and scheduled generation tasks.",
   "author": "zwmopen",
+  "homepage": "https://github.com/zwmopen/anygen-pl-workbench",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zwmopen/anygen-pl-workbench.git"
+  },
   "type": "module",
   "main": "desktop/main.mjs",
   "scripts": {

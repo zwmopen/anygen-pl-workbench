@@ -13,7 +13,6 @@ const historyFile = path.join(dataDir, "history", "index.json");
 const localApiKeyFile = path.join(rootDir, "API key.txt");
 const defaultBatchSourceDir = path.join(rootDir, "作品");
 const defaultDownloadsDir = path.join(os.homedir(), "Downloads");
-const defaultManualPrompt = "";
 
 const defaultPromptTemplates = [
   {
@@ -24,14 +23,30 @@ const defaultPromptTemplates = [
   {
     id: "general-writing",
     name: "通用写作",
-    content: "请根据以下要求完成内容创作：\n\n主题：\n目标：\n受众：\n风格：\n必须包含：\n"
+    content: "请根据以下要求完成内容创作：\n\n主题：\n目标：\n受众：\n语气：\n结构要求：\n必须包含：\n"
   },
   {
-    id: "social-post",
-    name: "社媒图文",
-    content: "请根据以下要求生成适合社交平台发布的图文内容：\n\n主题：\n受众：\n语气：\n需要输出：标题、正文结构、配图建议。\n"
+    id: "xhs-copywriting",
+    name: "小红书图文文案",
+    content: "请帮我生成一篇适合小红书发布的图文文案。\n\n主题：\n目标人群：\n核心卖点：\n语气：自然、真实、能引发收藏\n输出要求：\n1. 给我 3 个标题\n2. 正文按开头吸引 + 中段干货 + 结尾互动来写\n3. 附上 5 到 8 个相关话题\n"
+  },
+  {
+    id: "xhs-replica",
+    name: "小红书复刻出图",
+    content: "我会给你链接、原文案或参考图片，请你按“小红书成品包”的思路帮我整理输出。\n\n请完成：\n1. 提炼原内容的主题、结构和亮点\n2. 给出适合 3:4 图文的封面方向和内页结构\n3. 输出可直接发布的文案\n4. 为每一页补充清晰的生图提示词\n要求：简体中文、可直接拿去做图、不要空话\n"
+  },
+  {
+    id: "photo-settings-card",
+    name: "摄影参数卡",
+    content: "请把下面的拍摄参数和场景信息整理成适合小红书发布的“摄影参数卡”内容。\n\n请输出：\n1. 一个封面标题\n2. 每组参数对应的场景说明\n3. 每页参数卡的排版建议\n4. 一段可直接发布的正文\n要求：参数值不要乱改，语言更好懂，适合新手直接照抄\n"
+  },
+  {
+    id: "product-comparison",
+    name: "数码横测对比",
+    content: "请把下面的产品对比信息整理成“一图对比/横测图”内容。\n\n产品列表：\n核心维度：\n目标人群：\n\n请输出：\n1. 封面标题\n2. 对比表结构\n3. 每个产品的卖点总结\n4. 一段可直接发布的导购文案\n要求：信息清晰，适合做 3:4 竖版图文，参数不编造\n"
   }
 ];
+const templateCatalogVersion = 2;
 
 export const defaultConfig = {
   anygen: {
@@ -39,7 +54,7 @@ export const defaultConfig = {
     baseUrl: "https://www.anygen.io",
     operation: "chat",
     language: "zh-CN",
-    style: "clean editorial for 小红书 图文",
+    style: "",
     slideCount: "",
     ratio: "16:9",
     docFormat: "docx",
@@ -53,13 +68,14 @@ export const defaultConfig = {
     outputDirectory: "",
     referenceDirectory: "",
     selectedPromptTemplateId: "blank-start",
+    templateCatalogVersion,
     promptTemplates: defaultPromptTemplates
   },
   batch: {
     mode: "folders",
     sourceDirectory: "",
     spreadsheetPath: "",
-    fallbackPrompt: "请基于我提供的参考文本和参考图片，生成适合小红书发布的图文内容。请输出清晰标题、正文结构和配图方案，语言自然、可直接发布。",
+    fallbackPrompt: "请基于我提供的参考文本和参考图片，生成适合发布的图文内容。请输出清晰标题、正文结构和配图方案，语言自然，可直接使用。",
     includeRootWhenNoSubfolders: true,
     saveIntoSourceFolder: true,
     outputRootDirectory: "",
@@ -70,6 +86,18 @@ export const defaultConfig = {
     time: "09:00",
     registerWindowsTask: false,
     taskName: "AnyGen Workbench Daily"
+  },
+  account: {
+    autoCheckIn: false,
+    sessionReady: false,
+    lastCheckInAt: "",
+    lastCheckInDate: "",
+    lastCheckInStatus: "",
+    lastCheckInMessage: "",
+    lastCreditsText: "",
+    lastCreditsObservedAt: "",
+    lastDetectedLinks: {},
+    lastProfileLabel: ""
   }
 };
 
@@ -91,22 +119,33 @@ export class ConfigStore {
   async getConfig() {
     const saved = await readJson(this.configFile, {});
     const merged = mergeDeep(defaultConfig, saved);
+    merged.manual.promptTemplates = mergePromptTemplates(
+      saved?.manual?.promptTemplates,
+      saved?.manual?.templateCatalogVersion
+    );
+    merged.manual.templateCatalogVersion = templateCatalogVersion;
+
     if (!saved?.anygen?.operation) {
       merged.anygen.operation = "chat";
     }
+
     const detectedApiKey = await detectLocalApiKey();
     if (!merged.anygen.apiKey && detectedApiKey) {
       merged.anygen.apiKey = detectedApiKey;
     }
+
     if (!merged.batch.sourceDirectory && await fileExists(defaultBatchSourceDir)) {
       merged.batch.sourceDirectory = defaultBatchSourceDir;
     }
+
     if (!merged.manual.outputDirectory) {
       merged.manual.outputDirectory = defaultDownloadsDir;
     }
+
     if (!merged.batch.outputRootDirectory) {
       merged.batch.outputRootDirectory = defaultDownloadsDir;
     }
+
     return merged;
   }
 
@@ -160,11 +199,39 @@ function mergeDeep(base, patch) {
       result[key] = value;
     }
   }
+
   return result;
 }
 
 function isObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergePromptTemplates(savedTemplates, savedVersion) {
+  const existing = Array.isArray(savedTemplates)
+    ? savedTemplates
+      .map((template, index) => ({
+        id: String(template?.id || `prompt-template-${index + 1}`),
+        name: String(template?.name || "").trim(),
+        content: String(template?.content || "")
+      }))
+      .filter((template) => template.name)
+    : [];
+
+  if (savedVersion === templateCatalogVersion) {
+    return existing;
+  }
+
+  const byId = new Map(existing.map((template) => [template.id, template]));
+  const merged = [...existing];
+
+  defaultPromptTemplates.forEach((template) => {
+    if (!byId.has(template.id)) {
+      merged.push({ ...template });
+    }
+  });
+
+  return merged;
 }
 
 async function detectLocalApiKey() {

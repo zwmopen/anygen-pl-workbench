@@ -21,6 +21,11 @@ const host = process.env.HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "4318", 10);
 
 let singleton = null;
+let desktopAccountBridgePromise = null;
+let updateStatusCache = {
+  value: null,
+  checkedAt: 0
+};
 
 export async function createServerApp() {
   if (singleton) {
@@ -37,6 +42,7 @@ export async function createServerApp() {
   const scheduler = new SchedulerService({ configStore, jobService, projectRoot });
   const initialConfig = await configStore.getConfig();
   await scheduler.applyConfig(initialConfig);
+  const accountBridge = await getDesktopAccountBridge();
 
   const app = express();
   app.use(express.json({ limit: "20mb" }));
@@ -64,6 +70,61 @@ export async function createServerApp() {
   app.get("/api/system/diagnostics", async (_request, response, next) => {
     try {
       response.json(await buildDiagnostics(configStore));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/account/status", async (_request, response, next) => {
+    try {
+      response.json(await buildAccountStatus(configStore, accountBridge));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/account/open", async (_request, response, next) => {
+    try {
+      if (!accountBridge) {
+        throw new Error("当前不是桌面客户端，不能打开账号窗口。");
+      }
+      response.json(await accountBridge.openAccountWindow());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/account/check-in", async (_request, response, next) => {
+    try {
+      if (!accountBridge) {
+        throw new Error("当前不是桌面客户端，不能执行网页登录签到。");
+      }
+
+      const result = await accountBridge.tryDailyCheckIn();
+      await accountBridge.persistAccountState(configStore, result);
+      response.json(await buildAccountStatus(configStore, accountBridge, result));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/account/logout", async (_request, response, next) => {
+    try {
+      if (!accountBridge) {
+        throw new Error("当前不是桌面客户端，不能退出网页登录状态。");
+      }
+
+      const result = await accountBridge.clearAccountSession();
+      await configStore.updateConfig({
+        account: {
+          sessionReady: false,
+          lastProfileLabel: "",
+          lastCreditsText: "",
+          lastCreditsObservedAt: "",
+          lastDetectedLinks: {}
+        }
+      });
+      response.json(await buildAccountStatus(configStore, accountBridge, result));
     } catch (error) {
       next(error);
     }
@@ -177,6 +238,14 @@ export async function createServerApp() {
     response.json({ ok: true });
   });
 
+  app.get("/api/system/update-status", async (_request, response, next) => {
+    try {
+      response.json(await getUpdateStatus());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("*", (_request, response) => {
     response.sendFile(path.join(projectRoot, "public", "index.html"));
   });
@@ -188,12 +257,69 @@ export async function createServerApp() {
   });
 
   singleton = { app, scheduler, configStore, jobService };
+  if (accountBridge) {
+    accountBridge.maybeAutoCheckIn(configStore).catch((error) => {
+      console.error("Auto check-in failed:", error);
+    });
+  }
   return singleton;
 }
 
 export async function runScheduledOnce() {
   const { scheduler } = await createServerApp();
   return await scheduler.runScheduledBatch();
+}
+
+async function getDesktopAccountBridge() {
+  if (!process.versions?.electron) {
+    return null;
+  }
+
+  if (!desktopAccountBridgePromise) {
+    desktopAccountBridgePromise = import("../desktop/account-center.mjs")
+      .catch(() => null);
+  }
+
+  return await desktopAccountBridgePromise;
+}
+
+async function buildAccountStatus(configStore, accountBridge, liveResult = null) {
+  const config = await configStore.getConfig();
+  const live = liveResult || (accountBridge ? await accountBridge.getAccountSnapshot() : null);
+
+  if (accountBridge && live && liveResult === null) {
+    await configStore.updateConfig({
+      account: {
+        sessionReady: Boolean(live.sessionReady),
+        lastCreditsText: live.creditsText || config.account?.lastCreditsText || "",
+        lastCreditsObservedAt: live.observedAt || config.account?.lastCreditsObservedAt || "",
+        lastDetectedLinks: live.links || config.account?.lastDetectedLinks || {},
+        lastProfileLabel: live.profileLabel || config.account?.lastProfileLabel || ""
+      }
+    });
+  }
+
+  const mergedConfig = await configStore.getConfig();
+  const account = mergedConfig.account || {};
+  const creditsText = live?.snapshot?.creditsText || live?.creditsText || account.lastCreditsText || "";
+  const observedAt = live?.snapshot?.observedAt || live?.observedAt || account.lastCreditsObservedAt || "";
+  const sessionReady = Boolean(live?.sessionReady ?? account.sessionReady);
+  const links = live?.snapshot?.links || live?.links || account.lastDetectedLinks || {};
+
+  return {
+    supported: Boolean(accountBridge),
+    sessionReady,
+    autoCheckIn: Boolean(account.autoCheckIn),
+    lastCheckInAt: account.lastCheckInAt || "",
+    lastCheckInDate: account.lastCheckInDate || "",
+    lastCheckInStatus: account.lastCheckInStatus || "",
+    lastCheckInMessage: account.lastCheckInMessage || "",
+    creditsText,
+    creditsObservedAt: observedAt,
+    profileLabel: live?.snapshot?.profileLabel || live?.profileLabel || account.lastProfileLabel || "",
+    checkInHint: live?.snapshot?.checkInText || live?.checkInText || "",
+    links
+  };
 }
 
 async function openFolderDialog(description, initialPath = "") {
@@ -367,6 +493,158 @@ async function buildDiagnostics(configStore) {
     checklist,
     banner: buildBannerMessage(config, checklist)
   };
+}
+
+async function getUpdateStatus() {
+  const now = Date.now();
+  if (updateStatusCache.value && now - updateStatusCache.checkedAt < 10 * 60 * 1000) {
+    return updateStatusCache.value;
+  }
+
+  const packageMeta = await readPackageMeta();
+  const currentVersion = String(packageMeta.version || "0.0.0");
+  const repo = resolveRepositoryMeta(packageMeta);
+
+  if (!repo) {
+    const fallback = {
+      supported: false,
+      currentVersion,
+      latestVersion: currentVersion,
+      hasUpdate: false,
+      releaseUrl: packageMeta.homepage || "",
+      checkedAt: new Date().toISOString(),
+      error: "没有配置 GitHub 仓库地址。"
+    };
+    updateStatusCache = { value: fallback, checkedAt: now };
+    return fallback;
+  }
+
+  try {
+    const release = await fetchLatestGitHubRelease(repo);
+    const latestVersion = normalizeVersionTag(release.tag_name || release.name || currentVersion);
+    const releaseUrl = release.html_url || `https://github.com/${repo.owner}/${repo.name}/releases`;
+    const result = {
+      supported: true,
+      currentVersion,
+      latestVersion,
+      hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+      releaseUrl,
+      checkedAt: new Date().toISOString(),
+      releaseName: release.name || release.tag_name || latestVersion
+    };
+    updateStatusCache = { value: result, checkedAt: now };
+    return result;
+  } catch (error) {
+    const fallback = {
+      supported: true,
+      currentVersion,
+      latestVersion: currentVersion,
+      hasUpdate: false,
+      releaseUrl: `https://github.com/${repo.owner}/${repo.name}/releases`,
+      checkedAt: new Date().toISOString(),
+      error: error.message || "检查更新失败"
+    };
+    updateStatusCache = { value: fallback, checkedAt: now };
+    return fallback;
+  }
+}
+
+function resolveRepositoryMeta(packageMeta) {
+  const repositoryUrl = packageMeta?.repository?.url || packageMeta?.homepage || "";
+  const match = String(repositoryUrl).match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?/i);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    owner: match[1],
+    name: match[2]
+  };
+}
+
+async function fetchLatestGitHubRelease(repo) {
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "AnyGen-Workbench"
+  };
+
+  const latestResponse = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases/latest`, {
+    headers
+  });
+
+  if (latestResponse.ok) {
+    return await latestResponse.json();
+  }
+
+  const releasesResponse = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=5`, {
+    headers
+  });
+
+  if (releasesResponse.ok) {
+    const releases = await releasesResponse.json();
+    const published = Array.isArray(releases)
+      ? releases.find((release) => !release.draft)
+      : null;
+    if (published) {
+      return published;
+    }
+  }
+
+  const tagsResponse = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/tags?per_page=5`, {
+    headers
+  });
+  if (!tagsResponse.ok) {
+    if ([latestResponse.status, releasesResponse.status, tagsResponse.status].every((status) => status === 404)) {
+      throw new Error("当前仓库或 release 还没有公开，客户端暂时没法直接检查 GitHub 更新。");
+    }
+    throw new Error(`GitHub 返回 ${latestResponse.status}`);
+  }
+
+  const tags = await tagsResponse.json();
+  const latestTag = Array.isArray(tags) ? tags[0] : null;
+  if (!latestTag?.name) {
+    throw new Error("GitHub 上还没有可用的 release 或 tag。");
+  }
+
+  return {
+    tag_name: latestTag.name,
+    name: latestTag.name,
+    html_url: `https://github.com/${repo.owner}/${repo.name}/releases`
+  };
+}
+
+function normalizeVersionTag(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^v/i, "")
+    .replace(/[^\dA-Za-z.+-].*$/, "") || "0.0.0";
+}
+
+function compareVersions(left, right) {
+  const leftParts = String(left || "0.0.0").split(/[.-]/);
+  const rightParts = String(right || "0.0.0").split(/[.-]/);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const a = leftParts[index] ?? "0";
+    const b = rightParts[index] ?? "0";
+    const bothNumeric = /^\d+$/.test(a) && /^\d+$/.test(b);
+
+    if (bothNumeric) {
+      const delta = Number(a) - Number(b);
+      if (delta !== 0) {
+        return delta;
+      }
+      continue;
+    }
+
+    const textDelta = String(a).localeCompare(String(b));
+    if (textDelta !== 0) {
+      return textDelta;
+    }
+  }
+
+  return 0;
 }
 
 function buildBannerMessage(config, checklist) {

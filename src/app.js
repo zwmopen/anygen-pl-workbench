@@ -216,7 +216,7 @@ async function openFileDialog(filter) {
 }
 
 async function openLocalPath(targetPath) {
-  const normalized = path.resolve(targetPath);
+  const normalized = isExternalTarget(targetPath) ? targetPath : path.resolve(targetPath);
   await execFileAsync("cmd.exe", ["/c", "start", "", normalized], {
     cwd: projectRoot,
     windowsHide: true
@@ -225,6 +225,10 @@ async function openLocalPath(targetPath) {
 
 function escapePowerShell(value) {
   return String(value || "").replace(/'/g, "''");
+}
+
+function isExternalTarget(value) {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(String(value || "").trim());
 }
 
 async function buildDiagnostics(configStore) {

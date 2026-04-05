@@ -70,184 +70,221 @@
           </div>
         </section>
 
-        <section class="card card-span-7">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">基础设置</p>
-              <h2>接口配置</h2>
-            </div>
-            <button id="save-config" class="button ghost">保存配置</button>
-          </div>
-
-          <div class="form-grid form-grid-3">
-            <label class="field field-span-2">
-              <span>AnyGen API Key</span>
-              <input id="api-key" type="password" placeholder="sk-xxxx" />
-            </label>
-            <label class="field">
-              <span>基础地址</span>
-              <input id="base-url" type="text" placeholder="https://www.anygen.io" />
-            </label>
-            <label class="field">
-              <span>默认操作类型</span>
-              <select id="operation">
-                <option value="chat">通用对话</option>
-                <option value="doc">文档生成</option>
-                <option value="slide">幻灯片生成</option>
-                <option value="storybook">故事板</option>
-                <option value="data_analysis">数据分析</option>
-                <option value="website">网站生成</option>
-                <option value="smart_draw">图表绘制</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>语言</span>
-              <select id="language">
-                <option value="zh-CN">zh-CN</option>
-                <option value="en-US">en-US</option>
-              </select>
-            </label>
-            <label class="field field-span-2">
-              <span>风格提示</span>
-              <input id="style" type="text" placeholder="例如：小红书封面、清爽海报、电商图文" />
-            </label>
-            <label class="field field-span-3">
-              <span>额外请求头</span>
-              <textarea id="extra-headers" rows="3" placeholder="一行一个，例如：X-Trace-Id: abc"></textarea>
-            </label>
-          </div>
-        </section>
-
-        <section class="card card-span-7">
-          <div class="section-head">
+        <section class="card card-span-8 card-manual">
+          <div class="card-toolbar">
             <div>
               <p class="section-kicker">手动模式</p>
               <h2>发送提示词</h2>
             </div>
-            <div class="button-row">
-              <button id="run-manual" class="button primary">立即运行</button>
-            </div>
+            <button id="run-manual" class="button primary">立即运行</button>
           </div>
 
-          <div class="form-grid form-grid-2">
-            <label class="field field-span-2">
-              <span>提示词模板</span>
-              <div class="template-picker inline-template-picker">
-                <select id="manual-template-select"></select>
-                <button id="open-template-modal" class="button ghost compact" type="button">添加</button>
-              </div>
-              <div id="manual-template-meta" class="template-meta">选择一个模板后，会立刻替换下面的提示词内容。</div>
-            </label>
-            <label class="field field-span-2">
-              <span>提示词</span>
-              <textarea
-                id="manual-prompt"
-                rows="14"
-                placeholder="点击“填充选中提示词”后，会把默认提示词放进这里。你也可以手动输入自己的提示词。"
-              ></textarea>
-            </label>
-            <label class="field">
-              <span>结果根目录</span>
-              <div class="inline-path">
-                <input id="manual-output" type="text" placeholder="选一个总目录，每次任务会自动生成单独子目录" />
-                <button data-pick="manual-output" data-kind="folder" class="button ghost compact" type="button">选择</button>
-              </div>
-            </label>
-            <label class="field">
-              <span>参考目录</span>
-              <div class="inline-path">
-                <input id="manual-reference-dir" type="text" placeholder="可选：本地图、文档目录" />
-                <button data-pick="manual-reference-dir" data-kind="folder" class="button ghost compact" type="button">选择</button>
-              </div>
-            </label>
-            <label class="field field-span-2">
-              <span>上传参考文件</span>
-              <input id="manual-files" type="file" multiple />
-            </label>
+          <div class="surface-note">
+            <strong>默认就是 Chat 模式</strong>
+            <p>要切到文档、幻灯片、网站或图表时，改右侧“默认操作类型”就行；不改时就一直按聊天模式走。</p>
+          </div>
+
+          <div class="manual-layout">
+            <div class="manual-main">
+              <label class="field">
+                <span>提示词模板</span>
+                <div class="template-picker inline-template-picker">
+                  <select id="manual-template-select"></select>
+                  <button id="open-template-modal" class="button ghost compact" type="button">添加</button>
+                </div>
+                <div id="manual-template-meta" class="template-meta">选择一个模板后，会立刻替换下面的提示词内容。</div>
+              </label>
+
+              <label class="field">
+                <span>提示词</span>
+                <textarea
+                  id="manual-prompt"
+                  rows="14"
+                  placeholder="选择一个模板后，会自动替换这里的内容。你也可以手动输入自己的提示词。"
+                ></textarea>
+              </label>
+            </div>
+
+            <aside class="manual-side">
+              <label class="field">
+                <span>结果根目录</span>
+                <div class="inline-path">
+                  <input id="manual-output" type="text" placeholder="选一个总目录，每次任务会自动生成单独子目录" />
+                  <button data-pick="manual-output" data-kind="folder" class="button ghost compact" type="button">选择</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>参考目录</span>
+                <div class="inline-path">
+                  <input id="manual-reference-dir" type="text" placeholder="可选：本地图、文档目录" />
+                  <button data-pick="manual-reference-dir" data-kind="folder" class="button ghost compact" type="button">选择</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>上传参考文件</span>
+                <input id="manual-files" type="file" multiple />
+              </label>
+            </aside>
           </div>
         </section>
 
-        <section class="card card-span-5">
+        <section class="card card-span-4 card-config">
           <div class="section-head">
             <div>
-              <p class="section-kicker">批量模式</p>
-              <h2>按目录或表格跑</h2>
+              <p class="section-kicker">基础设置</p>
+              <h2>常用配置</h2>
             </div>
-            <button id="run-batch" class="button secondary">批量运行</button>
+            <button id="save-config" class="button ghost">保存配置</button>
           </div>
 
-          <div class="form-grid form-grid-2 compact-grid">
+          <div class="form-grid compact-form-grid">
             <label class="field">
-              <span>批量模式</span>
-              <select id="batch-mode">
-                <option value="folders">按文件夹扫描</option>
-                <option value="spreadsheet">按表格逐行处理</option>
-              </select>
+              <span>AnyGen API Key</span>
+              <input id="api-key" type="password" placeholder="sk-xxxx" />
             </label>
-            <label class="field">
-              <span>单次最大任务数</span>
-              <input id="batch-max" type="number" min="1" max="500" />
-            </label>
-            <label class="field field-span-2">
-              <span>源文件夹</span>
-              <div class="inline-path">
-                <input id="batch-source" type="text" placeholder="每个子文件夹可视作一个任务" />
-                <button data-pick="batch-source" data-kind="folder" class="button ghost compact" type="button">选择</button>
+
+            <div class="mini-grid">
+              <label class="field">
+                <span>默认操作类型</span>
+                <select id="operation">
+                  <option value="chat">通用对话</option>
+                  <option value="doc">文档生成</option>
+                  <option value="slide">幻灯片生成</option>
+                  <option value="storybook">故事板</option>
+                  <option value="data_analysis">数据分析</option>
+                  <option value="website">网站生成</option>
+                  <option value="smart_draw">图表绘制</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>语言</span>
+                <select id="language">
+                  <option value="zh-CN">zh-CN</option>
+                  <option value="en-US">en-US</option>
+                </select>
+              </label>
+            </div>
+
+            <details class="inline-fold">
+              <summary>更多设置</summary>
+              <div class="inline-fold-body">
+                <label class="field">
+                  <span>基础地址</span>
+                  <input id="base-url" type="text" placeholder="https://www.anygen.io" />
+                </label>
+
+                <label class="field">
+                  <span>风格提示</span>
+                  <input id="style" type="text" placeholder="例如：小红书封面、清爽海报、电商图文" />
+                </label>
               </div>
-            </label>
-            <label class="field field-span-2">
-              <span>表格路径</span>
-              <div class="inline-path">
-                <input id="batch-sheet" type="text" placeholder="支持 .xlsx / .csv" />
-                <button
-                  data-pick="batch-sheet"
-                  data-kind="file"
-                  data-filter="Excel 文件|*.xlsx;*.csv|所有文件|*.*"
-                  class="button ghost compact"
-                  type="button"
-                >
-                  选择
-                </button>
-              </div>
-            </label>
-            <label class="field field-span-2">
-              <span>兜底提示词</span>
-              <textarea id="fallback-prompt" rows="5" placeholder="目录里没有 prompt 时自动使用"></textarea>
-            </label>
-            <label class="toggle-field field-span-2">
-              <input id="save-into-source" type="checkbox" />
-              <span>结果直接保存到原始素材目录</span>
-            </label>
+            </details>
+          </div>
+
+          <div class="config-note">
+            <strong>顺手建议</strong>
+            <p>如果你主要就是做通用对话，这里保持默认 chat 即可；只有在任务类型明显变了时再切换。</p>
           </div>
         </section>
 
-        <section class="card card-span-5">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">定时模式</p>
-              <h2>每天自动跑</h2>
+        <section class="card card-span-5 fold-card">
+          <details>
+            <summary class="fold-summary">
+              <div>
+                <p class="section-kicker">批量模式</p>
+                <h2>按目录或表格跑</h2>
+              </div>
+              <span class="fold-indicator">展开</span>
+            </summary>
+
+            <div class="fold-body">
+              <div class="button-row fold-actions">
+                <button id="run-batch" class="button secondary">批量运行</button>
+              </div>
+
+              <div class="form-grid form-grid-2 compact-grid">
+                <label class="field">
+                  <span>批量模式</span>
+                  <select id="batch-mode">
+                    <option value="folders">按文件夹扫描</option>
+                    <option value="spreadsheet">按表格逐行处理</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>单次最大任务数</span>
+                  <input id="batch-max" type="number" min="1" max="500" />
+                </label>
+                <label class="field field-span-2">
+                  <span>源文件夹</span>
+                  <div class="inline-path">
+                    <input id="batch-source" type="text" placeholder="每个子文件夹可视作一个任务" />
+                    <button data-pick="batch-source" data-kind="folder" class="button ghost compact" type="button">选择</button>
+                  </div>
+                </label>
+                <label class="field field-span-2">
+                  <span>表格路径</span>
+                  <div class="inline-path">
+                    <input id="batch-sheet" type="text" placeholder="支持 .xlsx / .csv" />
+                    <button
+                      data-pick="batch-sheet"
+                      data-kind="file"
+                      data-filter="Excel 文件|*.xlsx;*.csv|所有文件|*.*"
+                      class="button ghost compact"
+                      type="button"
+                    >
+                      选择
+                    </button>
+                  </div>
+                  <div class="field-hint">CSV 现在支持带换行单元格，但长期更推荐用 `.xlsx`，稳定性更高。</div>
+                </label>
+                <label class="field field-span-2">
+                  <span>兜底提示词</span>
+                  <textarea id="fallback-prompt" rows="5" placeholder="目录里没有 prompt 时自动使用"></textarea>
+                </label>
+                <label class="toggle-field field-span-2">
+                  <input id="save-into-source" type="checkbox" />
+                  <span>结果直接保存到原始素材目录</span>
+                </label>
+              </div>
             </div>
-          </div>
+          </details>
+        </section>
 
-          <div class="button-row">
-            <button id="run-schedule-now" class="button ghost">现在跑一次</button>
-            <button id="register-task" class="button ghost">注册系统定时</button>
-          </div>
+        <section class="card card-span-5 fold-card">
+          <details>
+            <summary class="fold-summary">
+              <div>
+                <p class="section-kicker">定时模式</p>
+                <h2>每天自动跑</h2>
+              </div>
+              <span class="fold-indicator">展开</span>
+            </summary>
 
-          <div class="form-grid form-grid-2 compact-grid top-gap">
-            <label class="toggle-field field-span-2">
-              <input id="scheduler-enabled" type="checkbox" />
-              <span>应用打开时按这个时间自动执行</span>
-            </label>
-            <label class="field">
-              <span>每日时间</span>
-              <input id="scheduler-time" type="time" />
-            </label>
-            <label class="field">
-              <span>系统任务名</span>
-              <input id="scheduler-task-name" type="text" placeholder="AnyGen Workbench Daily" />
-            </label>
-          </div>
+            <div class="fold-body">
+              <div class="button-row fold-actions">
+                <button id="run-schedule-now" class="button ghost">现在跑一次</button>
+                <button id="register-task" class="button ghost">注册系统定时</button>
+              </div>
+
+              <div class="form-grid form-grid-2 compact-grid top-gap">
+                <label class="toggle-field field-span-2">
+                  <input id="scheduler-enabled" type="checkbox" />
+                  <span>应用打开时按这个时间自动执行</span>
+                </label>
+                <label class="field">
+                  <span>每日时间</span>
+                  <input id="scheduler-time" type="time" />
+                </label>
+                <label class="field">
+                  <span>系统任务名</span>
+                  <input id="scheduler-task-name" type="text" placeholder="AnyGen Workbench Daily" />
+                </label>
+              </div>
+            </div>
+          </details>
         </section>
 
         <section class="card card-span-7">
@@ -256,7 +293,12 @@
               <p class="section-kicker">运行状态</p>
               <h2>日志</h2>
             </div>
+            <div class="button-row">
+              <button id="open-history-dir" class="button ghost compact" type="button">打开历史目录</button>
+              <button id="clear-status-log" class="button ghost compact" type="button">清空日志</button>
+            </div>
           </div>
+          <div id="run-state" class="run-state">当前空闲，可以直接发起任务。</div>
           <pre id="status-log" class="status-log">等待操作...</pre>
         </section>
 
@@ -268,30 +310,37 @@
             </div>
             <button id="refresh-history" class="button ghost">刷新</button>
           </div>
+          <div id="history-overview" class="history-overview"></div>
           <div id="history-list" class="history-list"></div>
         </section>
 
-        <section class="card card-span-12 intro-card">
-          <div class="section-head section-head-compact">
-            <div>
-              <p class="section-kicker">使用说明</p>
-              <h2>通用对话一键落地到本地目录</h2>
+        <section class="card card-span-12 fold-card intro-card">
+          <details>
+            <summary class="fold-summary">
+              <div>
+                <p class="section-kicker">使用说明</p>
+                <h2>通用对话一键落地到本地目录</h2>
+              </div>
+              <span class="fold-indicator">展开</span>
+            </summary>
+
+            <div class="fold-body">
+              <div class="summary-list compact-summary-list">
+                <div class="summary-item">
+                  <strong>优先保存真实附件</strong>
+                  <p>如果 AnyGen 返回 Markdown、图片或压缩包，应用会优先保存原始结果。</p>
+                </div>
+                <div class="summary-item">
+                  <strong>建议直接要 zip</strong>
+                  <p>你可以在提示词里要求把图文和素材打包成 zip，应用会自动下载并解压。</p>
+                </div>
+                <div class="summary-item">
+                  <strong>结果直达本次目录</strong>
+                  <p>历史记录里展示的是每次任务真实生成的结果目录，方便直接打开查看。</p>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="summary-list compact-summary-list">
-            <div class="summary-item">
-              <strong>优先保存真实附件</strong>
-              <p>如果 AnyGen 返回 Markdown、图片或压缩包，应用会优先保存原始结果。</p>
-            </div>
-            <div class="summary-item">
-              <strong>建议直接要 zip</strong>
-              <p>你可以在提示词里要求把图文和素材打包成 zip，应用会自动下载并解压。</p>
-            </div>
-            <div class="summary-item">
-              <strong>结果直达本次目录</strong>
-              <p>历史记录里展示的是每次任务真实生成的结果目录，方便直接打开查看。</p>
-            </div>
-          </div>
+          </details>
         </section>
       </main>
     </div>

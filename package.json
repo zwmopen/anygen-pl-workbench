@@ -1,6 +1,6 @@
 {
   "name": "anygen-pl-workbench",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local AnyGen workbench for manual, batch, and scheduled generation tasks.",
   "type": "module",
   "scripts": {
@@ -8,7 +8,8 @@
     "dev": "node --watch server.js",
     "run-scheduled": "node server.js --run-scheduled",
     "smoke-test": "node scripts/smoke-test.mjs",
-    "build-portable": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-portable-release.ps1"
+    "build-portable": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-portable-release.ps1",
+    "build-installer": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-installer-release.ps1"
   },
   "engines": {
     "node": ">=20"

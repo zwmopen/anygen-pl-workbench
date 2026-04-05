@@ -9,6 +9,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $OutputRoot) {
   $OutputRoot = Join-Path $ProjectRoot "release"
 }
+$downloadDir = $null
 
 function Write-Step {
   param(

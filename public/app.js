@@ -35,12 +35,17 @@ const elements = {
   openProjectRoot: document.querySelector("#open-project-root"),
   openDataDir: document.querySelector("#open-data-dir"),
   openLogDir: document.querySelector("#open-log-dir"),
+  openHistoryDir: document.querySelector("#open-history-dir"),
+  clearStatusLog: document.querySelector("#clear-status-log"),
+  runState: document.querySelector("#run-state"),
+  historyOverview: document.querySelector("#history-overview"),
   historyList: document.querySelector("#history-list"),
   statusLog: document.querySelector("#status-log")
 };
 
 let latestDiagnostics = null;
 let promptTemplates = [];
+let activeRuns = 0;
 
 boot();
 
@@ -65,6 +70,8 @@ function bindEvents() {
   elements.openProjectRoot.addEventListener("click", () => openDiagnosticPath("projectRoot"));
   elements.openDataDir.addEventListener("click", () => openDiagnosticPath("dataDirectory"));
   elements.openLogDir.addEventListener("click", () => openDiagnosticPath("logDirectory"));
+  elements.openHistoryDir.addEventListener("click", () => openDiagnosticPath("historyDirectory"));
+  elements.clearStatusLog.addEventListener("click", clearStatusLog);
 
   document.querySelectorAll("[data-pick]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -94,7 +101,9 @@ async function hydrateConfig() {
   elements.operation.value = config.anygen.operation === "doc" ? "chat" : (config.anygen.operation || "chat");
   elements.language.value = config.anygen.language || "zh-CN";
   elements.style.value = config.anygen.style || "";
-  elements.extraHeaders.value = config.anygen.extraHeaders || "";
+  if (elements.extraHeaders) {
+    elements.extraHeaders.value = config.anygen.extraHeaders || "";
+  }
   promptTemplates = normalizePromptTemplates(config.manual.promptTemplates);
   renderPromptTemplateOptions(config.manual.selectedPromptTemplateId);
   const manualPrompt = String(config.manual.prompt || "").trim();
@@ -115,9 +124,11 @@ async function hydrateConfig() {
 
 async function saveConfig(options = {}) {
   const { silent = false } = options;
-  await requestJson("/api/config", {
-    method: "POST",
-    body: JSON.stringify(collectConfigPayload())
+  await withButtonBusy(document.querySelector("#save-config"), "保存中...", async () => {
+    await requestJson("/api/config", {
+      method: "POST",
+      body: JSON.stringify(collectConfigPayload())
+    });
   });
   await refreshDiagnostics();
   if (!silent) {
@@ -132,79 +143,94 @@ async function runManual() {
     return;
   }
 
-  await saveConfig();
+  await withRunState("手动任务运行中，正在等待 AnyGen 返回结果。", async () => {
+    await withButtonBusy(document.querySelector("#run-manual"), "运行中...", async () => {
+      await saveConfig();
 
-  const formData = new FormData();
-  formData.append("name", buildManualJobName(prompt));
-  formData.append("prompt", prompt);
-  formData.append("operation", elements.operation.value);
-  formData.append("outputDirectory", elements.manualOutput.value.trim());
-  formData.append("referenceDirectory", elements.manualReferenceDir.value.trim());
+      const formData = new FormData();
+      formData.append("name", buildManualJobName(prompt));
+      formData.append("prompt", prompt);
+      formData.append("operation", elements.operation.value);
+      formData.append("outputDirectory", elements.manualOutput.value.trim());
+      formData.append("referenceDirectory", elements.manualReferenceDir.value.trim());
 
-  Array.from(elements.manualFiles.files || []).forEach((file) => {
-    formData.append("referenceFiles", file);
+      Array.from(elements.manualFiles.files || []).forEach((file) => {
+        formData.append("referenceFiles", file);
+      });
+
+      log("手动任务已发出，正在等待 AnyGen 返回并落地到本地目录。");
+
+      try {
+        const result = await requestJson("/api/manual/run", {
+          method: "POST",
+          body: formData
+        }, false);
+
+        log(formatSummary("手动任务完成", result));
+        await refreshHistory();
+      } catch (error) {
+        throwAndLog(error.message);
+      }
+    });
   });
-
-  log("手动任务已发出，正在等待 AnyGen 返回并落地到本地目录。");
-
-  try {
-    const result = await requestJson("/api/manual/run", {
-      method: "POST",
-      body: formData
-    }, false);
-
-    log(formatSummary("手动任务完成", result));
-    await refreshHistory();
-  } catch (error) {
-    throwAndLog(error.message);
-  }
 }
 
 async function runBatch() {
-  await saveConfig();
-  log("批量任务开始执行，正在逐个目录或表格行处理。");
+  await withRunState("批量任务运行中，正在逐个目录或表格行处理。", async () => {
+    await withButtonBusy(document.querySelector("#run-batch"), "批量运行中...", async () => {
+      await saveConfig();
+      log("批量任务开始执行，正在逐个目录或表格行处理。");
 
-  try {
-    const result = await requestJson("/api/batch/run", {
-      method: "POST"
+      try {
+        const result = await requestJson("/api/batch/run", {
+          method: "POST"
+        });
+        log(formatSummary("批量任务完成", result));
+        await refreshHistory();
+      } catch (error) {
+        throwAndLog(error.message);
+      }
     });
-    log(formatSummary("批量任务完成", result));
-    await refreshHistory();
-  } catch (error) {
-    throwAndLog(error.message);
-  }
+  });
 }
 
 async function runScheduleNow() {
-  await saveConfig();
-  log("正在立即执行一次定时任务。");
+  await withRunState("定时任务正在立即执行这一轮。", async () => {
+    await withButtonBusy(document.querySelector("#run-schedule-now"), "执行中...", async () => {
+      await saveConfig();
+      log("正在立即执行一次定时任务。");
 
-  try {
-    const result = await requestJson("/api/scheduler/run-now", {
-      method: "POST"
+      try {
+        const result = await requestJson("/api/scheduler/run-now", {
+          method: "POST"
+        });
+        log(formatSummary("定时任务执行完成", result));
+        await refreshHistory();
+      } catch (error) {
+        throwAndLog(error.message);
+      }
     });
-    log(formatSummary("定时任务执行完成", result));
-    await refreshHistory();
-  } catch (error) {
-    throwAndLog(error.message);
-  }
+  });
 }
 
 async function registerSystemTask() {
-  await saveConfig();
+  await withButtonBusy(document.querySelector("#register-task"), "注册中...", async () => {
+    await saveConfig();
 
-  try {
-    const result = await requestJson("/api/system/register-task", {
-      method: "POST"
-    });
-    log(`Windows 计划任务已注册：${result.taskName}，每天 ${result.time} 运行。`);
-  } catch (error) {
-    throwAndLog(error.message);
-  }
+    try {
+      const result = await requestJson("/api/system/register-task", {
+        method: "POST"
+      });
+      log(`Windows 计划任务已注册：${result.taskName}，每天 ${result.time} 运行。${result.timezone ? ` 当前时区：${result.timezone}。` : ""}`);
+    } catch (error) {
+      throwAndLog(error.message);
+    }
+  });
 }
 
 async function refreshHistory() {
   const items = await requestJson("/api/history");
+  renderHistoryOverview(items);
   elements.historyList.innerHTML = "";
 
   if (!items.length) {
@@ -262,6 +288,43 @@ function renderDiagnostics(diagnostics) {
     : "未开启";
 }
 
+function renderHistoryOverview(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    elements.historyOverview.innerHTML = "";
+    return;
+  }
+
+  const completed = items.filter((item) => item.status === "completed").length;
+  const partial = items.filter((item) => item.status === "partial").length;
+  const failed = items.filter((item) => item.status === "failed").length;
+  const latestCreatedAt = items[0]?.createdAt
+    ? new Date(items[0].createdAt).toLocaleString("zh-CN", { hour12: false })
+    : "-";
+
+  elements.historyOverview.innerHTML = `
+    <div class="overview-card">
+      <span class="overview-label">最近记录</span>
+      <strong class="overview-value">${items.length}</strong>
+    </div>
+    <div class="overview-card">
+      <span class="overview-label">已完成</span>
+      <strong class="overview-value success">${completed}</strong>
+    </div>
+    <div class="overview-card">
+      <span class="overview-label">部分完成</span>
+      <strong class="overview-value warning">${partial}</strong>
+    </div>
+    <div class="overview-card">
+      <span class="overview-label">失败</span>
+      <strong class="overview-value danger">${failed}</strong>
+    </div>
+    <div class="overview-card is-wide">
+      <span class="overview-label">最近一次</span>
+      <strong class="overview-value">${escapeHtml(latestCreatedAt)}</strong>
+    </div>
+  `;
+}
+
 async function openDiagnosticPath(key) {
   const targetPath = latestDiagnostics?.paths?.[key];
   if (!targetPath) {
@@ -289,6 +352,15 @@ function renderHistoryItem(item) {
     : "-";
   const modeLabel = formatMode(item.mode);
   const statusLabel = formatStatus(item.status);
+  const warningSummary = Array.isArray(item.warnings) && item.warnings.length
+    ? `<div class="history-alert is-warning">${escapeHtml(item.warnings.join("；"))}</div>`
+    : "";
+  const errorSummary = item.error
+    ? `<div class="history-alert is-error">${escapeHtml(item.error)}</div>`
+    : "";
+  const taskUrlButton = item.taskUrl
+    ? '<button class="button ghost compact" type="button" data-action="open-task-url">打开任务页</button>'
+    : "";
 
   article.innerHTML = `
     <div class="history-compact">
@@ -302,7 +374,10 @@ function renderHistoryItem(item) {
       <div class="history-subline">
         <code class="path-pill compact-path-pill">${escapeHtml(item.outputDirectory || "-")}</code>
         ${item.outputDirectory ? '<button class="button ghost compact" type="button" data-action="open-dir">打开结果目录</button>' : ""}
+        ${taskUrlButton}
       </div>
+      ${errorSummary}
+      ${warningSummary}
     </div>
     ${renderFileList(item.files)}
   `;
@@ -318,7 +393,19 @@ function renderHistoryItem(item) {
     });
   };
 
+  const openTaskUrl = async () => {
+    if (!item.taskUrl) {
+      return;
+    }
+
+    await requestJson("/api/system/open-path", {
+      method: "POST",
+      body: JSON.stringify({ path: item.taskUrl })
+    });
+  };
+
   article.querySelector('[data-action="open-dir"]')?.addEventListener("click", openDirectory);
+  article.querySelector('[data-action="open-task-url"]')?.addEventListener("click", openTaskUrl);
 
   return article;
 }
@@ -355,7 +442,7 @@ function collectConfigPayload() {
       operation: elements.operation.value,
       language: elements.language.value,
       style: elements.style.value.trim(),
-      extraHeaders: elements.extraHeaders.value
+      extraHeaders: elements.extraHeaders?.value || ""
     },
     manual: {
       prompt: elements.manualPrompt.value,
@@ -501,9 +588,10 @@ async function requestJson(url, options = {}, useJsonHeaders = true) {
     ...options,
     headers
   });
-  const json = await response.json();
+  const raw = await response.text();
+  const json = raw ? safeParseJson(raw) : null;
   if (!response.ok) {
-    throw new Error(json.error || "请求失败。");
+    throw new Error(json?.error || raw || "请求失败。");
   }
   return json;
 }
@@ -532,6 +620,18 @@ function formatSummary(title, payload) {
     lines.push(`本次处理：${payload.total} 个任务`);
   }
 
+  if (typeof payload?.completed === "number" || typeof payload?.partial === "number" || typeof payload?.failed === "number") {
+    lines.push(`完成 ${payload.completed || 0} / 部分完成 ${payload.partial || 0} / 失败 ${payload.failed || 0}`);
+  }
+
+  if (Array.isArray(payload?.warnings) && payload.warnings.length) {
+    lines.push(`提醒：${payload.warnings.join("；")}`);
+  }
+
+  if (payload?.error) {
+    lines.push(`错误：${payload.error}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -539,6 +639,7 @@ function formatMode(mode) {
   const labels = {
     manual: "手动任务",
     "manual-batch": "手动批量",
+    scheduled: "定时批量",
     "scheduled-batch": "定时批量"
   };
 
@@ -548,6 +649,7 @@ function formatMode(mode) {
 function formatStatus(status) {
   const labels = {
     completed: "已完成",
+    partial: "部分完成",
     failed: "失败",
     processing: "处理中"
   };
@@ -562,6 +664,54 @@ function buildManualJobName(prompt) {
 
 function throwAndLog(message) {
   log(`出错：${message}`);
+}
+
+function clearStatusLog() {
+  elements.statusLog.textContent = "日志已清空。";
+}
+
+async function withButtonBusy(button, busyLabel, callback) {
+  if (!button) {
+    return await callback();
+  }
+
+  const previousLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = busyLabel;
+  try {
+    return await callback();
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+  }
+}
+
+async function withRunState(message, callback) {
+  activeRuns += 1;
+  renderRunState(message);
+  try {
+    return await callback();
+  } finally {
+    activeRuns = Math.max(0, activeRuns - 1);
+    renderRunState(activeRuns > 0 ? "仍有任务在运行中。" : "当前空闲，可以直接发起任务。");
+  }
+}
+
+function renderRunState(message) {
+  if (!elements.runState) {
+    return;
+  }
+
+  elements.runState.textContent = message;
+  elements.runState.className = `run-state ${activeRuns > 0 ? "is-busy" : "is-idle"}`;
+}
+
+function safeParseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function escapeHtml(value) {

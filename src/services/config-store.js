@@ -93,7 +93,7 @@ export class ConfigStore {
   async getConfig() {
     const saved = await readJson(this.configFile, {});
     const merged = mergeDeep(defaultConfig, saved);
-    if (!saved?.anygen?.operation || saved.anygen.operation === "doc") {
+    if (!saved?.anygen?.operation) {
       merged.anygen.operation = "chat";
     }
     const detectedApiKey = await detectLocalApiKey();

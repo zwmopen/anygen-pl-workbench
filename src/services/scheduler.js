@@ -3,12 +3,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const systemTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 
 export class SchedulerService {
   constructor({ configStore, jobService, projectRoot }) {
     this.configStore = configStore;
     this.jobService = jobService;
     this.projectRoot = projectRoot;
+    this.timezone = systemTimeZone;
     this.task = null;
     this.running = false;
   }
@@ -30,7 +32,7 @@ export class SchedulerService {
     this.task = cron.schedule(expression, async () => {
       await this.runScheduledBatch();
     }, {
-      timezone: "Asia/Shanghai"
+      timezone: this.timezone
     });
   }
 
@@ -65,7 +67,7 @@ export class SchedulerService {
       "/F"
     ]);
 
-    return { taskName, time };
+    return { taskName, time, timezone: this.timezone };
   }
 
   async unregisterWindowsTask(taskName) {

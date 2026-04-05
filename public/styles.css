@@ -125,8 +125,18 @@ body {
 .card-span-12 { grid-column: span 12; }
 .card-span-7 { grid-column: span 7; }
 .card-span-5 { grid-column: span 5; }
+.card-span-8 { grid-column: span 8; }
+.card-span-4 { grid-column: span 4; }
 
 .section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.card-toolbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -214,6 +224,31 @@ body {
   background: rgba(29, 106, 69, 0.08);
 }
 
+.surface-note,
+.config-note {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(244, 247, 251, 0.92));
+  box-shadow: var(--shadow-tight);
+}
+
+.surface-note strong,
+.config-note strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.surface-note p,
+.config-note p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 13px;
+}
+
 .setup-checklist {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -273,6 +308,25 @@ body {
   min-height: 100%;
 }
 
+.card-manual,
+.card-config {
+  align-self: start;
+}
+
+.manual-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.manual-main,
+.manual-side {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
 .form-grid {
   display: grid;
   gap: 12px;
@@ -291,6 +345,16 @@ body {
   align-items: start;
 }
 
+.compact-form-grid {
+  gap: 10px;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .field,
 .toggle-field {
   display: grid;
@@ -302,6 +366,36 @@ body {
 .toggle-field span {
   font-size: 14px;
   font-weight: 600;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.inline-fold {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-tight);
+}
+
+.inline-fold summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.inline-fold summary::-webkit-details-marker {
+  display: none;
+}
+
+.inline-fold-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
 }
 
 .field-span-2 {
@@ -357,7 +451,7 @@ select {
 
 textarea {
   resize: vertical;
-  min-height: 240px;
+  min-height: 220px;
   line-height: 1.7;
 }
 
@@ -405,6 +499,12 @@ select:focus {
 
 .button:hover {
   transform: translateY(-1px);
+}
+
+.button:disabled {
+  opacity: 0.68;
+  cursor: wait;
+  transform: none;
 }
 
 .button.primary {
@@ -467,10 +567,70 @@ select:focus {
   font-size: 13px;
 }
 
+.fold-card > details {
+  display: grid;
+  gap: 12px;
+}
+
+.fold-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fold-summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold-summary h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.fold-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: var(--shadow-tight);
+}
+
+.fold-card > details[open] .fold-indicator::before {
+  content: "收起";
+}
+
+.fold-card > details:not([open]) .fold-indicator::before {
+  content: "展开";
+}
+
+.fold-indicator {
+  color: transparent;
+  position: relative;
+}
+
+.fold-card > details[open] .fold-body {
+  padding-top: 4px;
+}
+
+.fold-actions {
+  margin-bottom: 2px;
+}
+
 .status-log {
   margin: 0;
-  min-height: 260px;
-  max-height: 460px;
+  min-height: 220px;
+  max-height: 420px;
   overflow: auto;
   padding: 16px;
   border-radius: var(--radius-lg);
@@ -480,6 +640,72 @@ select:focus {
   box-shadow: var(--shadow-inset);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.run-state {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-tight);
+}
+
+.run-state.is-busy {
+  color: #87601d;
+  background: rgba(239, 131, 93, 0.08);
+}
+
+.run-state.is-idle {
+  color: #1d6a45;
+  background: rgba(29, 106, 69, 0.08);
+}
+
+.history-overview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.overview-card {
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-tight);
+}
+
+.overview-card.is-wide {
+  grid-column: span 2;
+}
+
+.overview-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.overview-value {
+  display: block;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.overview-value.success {
+  color: #1d6a45;
+}
+
+.overview-value.warning {
+  color: #87601d;
+}
+
+.overview-value.danger {
+  color: #a03030;
 }
 
 .history-list {
@@ -522,6 +748,24 @@ select:focus {
   font-size: 13px;
 }
 
+.history-alert {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.history-alert.is-warning {
+  color: #87601d;
+  background: rgba(239, 131, 93, 0.1);
+}
+
+.history-alert.is-error {
+  color: #a03030;
+  background: rgba(160, 48, 48, 0.1);
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;
@@ -535,6 +779,11 @@ select:focus {
 .status-chip.completed {
   color: #1d6a45;
   background: rgba(29, 106, 69, 0.1);
+}
+
+.status-chip.partial {
+  color: #87601d;
+  background: rgba(239, 131, 93, 0.12);
 }
 
 .status-chip.failed {
@@ -670,12 +919,16 @@ select:focus {
   }
 
   .card-span-12,
+  .card-span-8,
   .card-span-7,
+  .card-span-4,
   .card-span-5 {
     grid-column: auto;
   }
 
   .setup-grid,
+  .manual-layout,
+  .history-overview,
   .compact-summary-list,
   .setup-checklist {
     grid-template-columns: 1fr;
@@ -707,11 +960,26 @@ select:focus {
     align-items: stretch;
   }
 
+  .fold-summary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .card-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .form-grid-2,
   .form-grid-3,
+  .mini-grid,
   .inline-template-picker,
   .inline-path {
     grid-template-columns: 1fr;
+  }
+
+  .overview-card.is-wide {
+    grid-column: auto;
   }
 
   .field-span-2,
@@ -722,5 +990,11 @@ select:focus {
   .path-pill {
     white-space: normal;
     word-break: break-all;
+  }
+
+  .button-row .button,
+  .card-toolbar .button,
+  .section-head .button {
+    width: 100%;
   }
 }
